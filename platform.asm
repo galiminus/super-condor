@@ -4,8 +4,10 @@
     include "xmacro.h"
 
 PLAYFIELD_WIDTH             = 4
-PLAYFIELD_HEIGHT            = 6
+PLAYFIELD_HEIGHT            = 5
+TILE_HEIGHT                 = 7
 PLAYFIELD_COLOR             = $a0
+LAVA_COLOR                  = $38
 BACKGROUND_COLOR            = $04
 
     SEG.U vars
@@ -13,7 +15,6 @@ BACKGROUND_COLOR            = $04
 
 RANDOM                 ds 1
 PLAYFIELD              ds PLAYFIELD_WIDTH * PLAYFIELD_HEIGHT * 2
-PF_TILES               ds 8
 
     SEG
     ORG $F000
@@ -33,74 +34,75 @@ GameKernel
     ; VBLANK
     TIMER_SETUP 37
 
+    jsr UpdateRandom
     jsr GenerateGameKernelBackground
     jsr GenerateGameKernelBasePlayfield
 
+    lda #%11111111
+    sta PF0
+    sta PF1
+    sta PF2
+
     TIMER_WAIT
 
+    TIMER_SETUP 192
+
     sta WSYNC
-    sta HMOVE
+    ; sta HMOVE
 
     lda #0
     sta VBLANK
 
-TY SET 0
+    ldx #TILE_HEIGHT * 4
+.UpperScreenLine
+        sta WSYNC
+        dex
+        bne .UpperScreenLine
+
+TILE_Y SET 0
     REPEAT PLAYFIELD_HEIGHT
-
-    lda #0
-    sta PF1
-    sta PF2
-
-TX SET 0
-    REPEAT PLAYFIELD_WIDTH
-
-    lda PLAYFIELD + TY * PLAYFIELD_WIDTH * 2 + TX * 2
-    sta PF_TILES + TX * 2
-
-    lda PLAYFIELD + TY * PLAYFIELD_WIDTH * 2 + TX * 2 + 1
-    sta PF_TILES + TX * 2 + 1
-TX SET TX + 1
-    REPEND
-
-    ldx #0
-    ldy #0
-    sta WSYNC
-
     SUBROUTINE
 
+    ldx #0
 .GameKernelLine
-        txa                     ; 2
-        lsr                     ; 2
-        lsr                     ; 2
-        and #%00000111          ; 2
-        tay                     ; 2
-    
-        lda (PF_TILES + 0),y
-        sta PF1
-        
-        lda (PF_TILES + 2),y
-        sta PF2
-
-        SLEEP 3
-
-        lda (PF_TILES + 6),y
-        sta PF1
-
-        lda (PF_TILES + 4),y
-        sta PF2
-        
-        inx
         sta WSYNC
+        IF TILE_Y = PLAYFIELD_HEIGHT - 1
+            lda #0
+            sta PF0
+        ENDIF ; Build entrance and exit
 
-        cpx #31
+        ldy TileDivideTable,x
+    
+        lda (PLAYFIELD + TILE_Y * PLAYFIELD_WIDTH * 2),y
+        sta PF1
+        
+        lda (PLAYFIELD + TILE_Y * PLAYFIELD_WIDTH * 2 + 2),y
+        sta PF2
+
+        IF TILE_Y = PLAYFIELD_HEIGHT - 1
+            SLEEP 15
+        ELSE
+            SLEEP 20
+        ENDIF
+
+        lda (PLAYFIELD + TILE_Y * PLAYFIELD_WIDTH * 2 + 4),y
+        sta PF2
+
+        lda (PLAYFIELD + TILE_Y * PLAYFIELD_WIDTH * 2 + 6),y
+        sta PF1
+
+        inx
+        cpx #TILE_HEIGHT * 4
         bne .GameKernelLine
 
-TY SET TY + 1
+TILE_Y SET TILE_Y + 1
     REPEND
+    sta WSYNC
 
-    lda #0
-    sta PF1
-    sta PF2
+    jsr GenerateGameKernelFloor
+    jsr GenerateGameKernelLava
+
+    TIMER_WAIT
 
     ; OVERSCAN
     TIMER_SETUP 30
@@ -110,6 +112,37 @@ TY SET TY + 1
     jsr ClearGameKernelPlayfield
 
     TIMER_WAIT
+
+GenerateGameKernelFloor
+    lda #%11111111
+    sta PF0
+    sta PF1
+    sta PF2
+    sta WSYNC
+    sta WSYNC
+    sta WSYNC
+    sta WSYNC
+    rts
+
+GenerateGameKernelLava
+    lda #$23
+    sta COLUPF ; set lava color
+
+    lda #$20
+    sta COLUBK    
+
+    REPEAT 3
+    jsr UpdateRandom
+    lda #%10101010
+    eor RANDOM
+    sta PF0
+    sta PF1
+    sta PF2
+    sta WSYNC
+    sta WSYNC
+    sta WSYNC
+    REPEND
+    rts
 
 GenerateGameKernelBackground
     lda #PLAYFIELD_COLOR
@@ -129,35 +162,30 @@ GenerateGameKernelBasePlayfield
     sta PF1
     sta PF2
 
-    SET_POINTER PLAYFIELD + 0, Tile5
+    SET_POINTER PLAYFIELD + 0, Tile6
     SET_POINTER PLAYFIELD + 2, Tile5
-    SET_POINTER PLAYFIELD + 4, Tile5
+    SET_POINTER PLAYFIELD + 4, Tile6
     SET_POINTER PLAYFIELD + 6, Tile5
 
     SET_POINTER PLAYFIELD + 8, Tile5
-    SET_POINTER PLAYFIELD + 10, Tile5
+    SET_POINTER PLAYFIELD + 10, Tile6
     SET_POINTER PLAYFIELD + 12, Tile5
-    SET_POINTER PLAYFIELD + 14, Tile5
+    SET_POINTER PLAYFIELD + 14, Tile6
 
-    SET_POINTER PLAYFIELD + 16, Tile1
-    SET_POINTER PLAYFIELD + 18, Tile1
-    SET_POINTER PLAYFIELD + 20, Tile1
-    SET_POINTER PLAYFIELD + 22, Tile1
+    SET_POINTER PLAYFIELD + 16, Tile6
+    SET_POINTER PLAYFIELD + 18, Tile5
+    SET_POINTER PLAYFIELD + 20, Tile6
+    SET_POINTER PLAYFIELD + 22, Tile5
 
-    SET_POINTER PLAYFIELD + 24, Tile1
-    SET_POINTER PLAYFIELD + 26, Tile1
-    SET_POINTER PLAYFIELD + 28, Tile1
-    SET_POINTER PLAYFIELD + 30, Tile1
+    SET_POINTER PLAYFIELD + 24, Tile5
+    SET_POINTER PLAYFIELD + 26, Tile6
+    SET_POINTER PLAYFIELD + 28, Tile5
+    SET_POINTER PLAYFIELD + 30, Tile6
 
-    SET_POINTER PLAYFIELD + 32, Tile4
-    SET_POINTER PLAYFIELD + 34, Tile4
-    SET_POINTER PLAYFIELD + 36, Tile3
-    SET_POINTER PLAYFIELD + 38, Tile3
-
-    SET_POINTER PLAYFIELD + 40, Tile3
-    SET_POINTER PLAYFIELD + 42, Tile4
-    SET_POINTER PLAYFIELD + 44, Tile4
-    SET_POINTER PLAYFIELD + 46, Tile4 ; Bottom Part
+    SET_POINTER PLAYFIELD + 32, Tile3
+    SET_POINTER PLAYFIELD + 34, Tile5
+    SET_POINTER PLAYFIELD + 36, Tile6
+    SET_POINTER PLAYFIELD + 38, Tile5
 
     rts
 
@@ -200,7 +228,6 @@ Tile1
     .byte #%00000001
     .byte #%00000001
     .byte #%00000001
-    .byte #%00000001 ; Tile 1
 
 Tile2
     .byte #%11111111
@@ -209,11 +236,9 @@ Tile2
     .byte #%10001000
     .byte #%10000000
     .byte #%10000000
-    .byte #%10000000
     .byte #%11111111 ; Tile 2
 
 Tile3
-    .byte #%00000001
     .byte #%00000011 
     .byte #%00000111
     .byte #%00001111
@@ -229,7 +254,6 @@ Tile4
     .byte #%00000000
     .byte #%00000000
     .byte #%00000000
-    .byte #%00000000
     .byte #%00000000 ; Tile 4
 
 Tile5
@@ -239,16 +263,24 @@ Tile5
     .byte #%11111111
     .byte #%11111111
     .byte #%11111111
-    .byte #%11111111
     .byte #%11111111 ; Tile 5
 
-LineToIndex
-LINE_Y   SET     0
-    REPEAT 4
-    REPEAT 32
-        .byte #LINE_Y
-    REPEND
-LINE_Y   SET     LINE_Y + 1
+Tile6
+    .byte #%00000000
+    .byte #%00000000 
+    .byte #%00000000
+    .byte #%00000000
+    .byte #%00000000
+    .byte #%00000000
+    .byte #%00000000 ; Tile 6
+
+TileDivideTable
+.TileDivideTableY SET 0
+    REPEAT TILE_HEIGHT
+        REPEAT 4
+        .byte .TileDivideTableY
+        REPEND
+.TileDivideTableY SET .TileDivideTableY + 1
     REPEND
 
     ORG $FE00
