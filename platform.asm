@@ -9,7 +9,7 @@ TILE_HEIGHT                 = 6
 PLAYFIELD_COLOR             = $a0
 LAVA_COLOR                  = $38
 BACKGROUND_COLOR            = $04
-PLAYER_ANIM_SPEED           = 128
+PLAYER_ANIM_SPEED           = 64
 
     SEG.U vars
     ORG $80
@@ -123,6 +123,7 @@ TILE_Y SET TILE_Y + 1
 
     jsr GenerateGameKernelFloor
     jsr GenerateGameKernelLava
+    jsr GenerateGameKernelClean
 
     TIMER_WAIT
 
@@ -139,7 +140,7 @@ TILE_Y SET TILE_Y + 1
 UpdateGameKernelPlayerAnim
     dec PLAYER_ANIM_CTR
     lda PLAYER_ANIM_CTR
-    cmp #128
+    cmp #PLAYER_ANIM_SPEED / 2
     bne .NotFrame0
 
     SET_POINTER PLAYER_CHAR_FRAME, CharFrame0
@@ -149,6 +150,9 @@ UpdateGameKernelPlayerAnim
     cmp #0
     bne .NotFrame1
     SET_POINTER PLAYER_CHAR_FRAME, CharFrame1
+
+    lda #PLAYER_ANIM_SPEED
+    sta PLAYER_ANIM_CTR
 
 .NotFrame1
     rts
@@ -171,17 +175,32 @@ GenerateGameKernelLava
     lda #$20
     sta COLUBK    
 
-    REPEAT 3
+
+    REPEAT 4
     jsr UpdateRandom
-    lda #%10101010
-    eor RANDOM
+    lda RANDOM
     sta PF0
+
+    jsr UpdateRandom
+    lda RANDOM
     sta PF1
+
+    jsr UpdateRandom
+    lda RANDOM
     sta PF2
-    sta WSYNC
-    sta WSYNC
-    sta WSYNC
+
+        REPEAT 4
+            sta WSYNC
+        REPEND
     REPEND
+    rts
+
+GenerateGameKernelClean
+    lda #$00
+    sta COLUPF
+
+    lda #$00
+    sta COLUBK    
     rts
 
 GenerateGameKernelBackground
@@ -290,7 +309,7 @@ FineAdjustSprite
     sta RESP0,x              ; 21/ 26/31/36/41/46/51/56/61/66/71 - Set the rough position.
     rts
 
-    BOUNDARY $ff ;; Force a page boundary crossing so "lda CharFrame0,y" takes the right amount of time
+    BOUNDARY $00 ;; Force a page boundary crossing so "lda CharFrame0,y" takes the right amount of time
 CharFrame0
     REPEAT 112
     .byte #%00000000
@@ -315,7 +334,7 @@ CharFrame0
     .byte #%00000000
     REPEND
 
-    BOUNDARY $ff ;; Force a page boundary crossing so "lda CharFrame0,y" takes the right amount of time
+    BOUNDARY $00 ;; Force a page boundary crossing so "lda CharFrame0,y" takes the right amount of time
 CharFrame1
     REPEAT 112
     .byte #%00000000
@@ -340,6 +359,7 @@ CharFrame1
     .byte #%00000000
     REPEND
 
+    BOUNDARY $00
 Tiles
 Tile1
     .byte #%10000001
@@ -352,7 +372,6 @@ Tile1
 Tile2
     .byte #%11111111
     .byte #%10000000 
-    .byte #%10000000
     .byte #%10001000
     .byte #%10000000
     .byte #%10000000
@@ -369,7 +388,6 @@ Tile3
 Tile4
     .byte #%11111111
     .byte #%11111111 
-    .byte #%00000000
     .byte #%00000000
     .byte #%00000000
     .byte #%00000000
