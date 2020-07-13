@@ -6,10 +6,11 @@
 PLAYFIELD_WIDTH             = 4
 PLAYFIELD_HEIGHT            = 5
 TILE_HEIGHT                 = 6
-PLAYFIELD_COLOR             = $a0
+PLAYFIELD_COLOR             = $02
 LAVA_COLOR                  = $38
-BACKGROUND_COLOR            = $04
+BACKGROUND_COLOR            = $01
 PLAYER_ANIM_SPEED           = 64
+PLAYER_COLOR                = $2a
 
     SEG.U vars
     ORG $80
@@ -32,6 +33,12 @@ Reset
     lda #PLAYER_ANIM_SPEED
     sta PLAYER_ANIM_CTR
 
+    lda #9
+    sta PLAYER_Y
+
+    lda #10
+    sta PLAYER_X
+
     SET_POINTER PLAYER_CHAR_FRAME, CharFrame0
 
 NextFrame
@@ -49,6 +56,7 @@ GameKernel
     jsr UpdateRandom
     jsr GenerateGameKernelBackground
     jsr GenerateGameKernelBasePlayfield
+    jsr GenerateGameKernelPlayer
     jsr UpdateGameKernelPlayerPosition
     jsr UpdateGameKernelPlayerAnim
 
@@ -76,6 +84,20 @@ GameKernel
 
     ldx #TILE_HEIGHT * 4
 .UpperScreenLine
+        and #$00000001
+        bne .NoStripe
+        lda #%11111111
+        sta PF0
+        sta PF1
+        sta PF2
+        jmp .HadStripe
+.NoStripe
+        lda #0
+        sta PF0
+        sta PF1
+        sta PF2
+
+.HadStripe
         sta WSYNC
         dex
         bne .UpperScreenLine
@@ -87,9 +109,13 @@ TILE_Y SET 0
     IF TILE_Y = PLAYFIELD_HEIGHT - 1
         lda #%00010000
         sta PF0
+    ELSE
+        lda #%11110000
+        sta PF0
     ENDIF ; Build entrance and exit
 
     ldx #TILE_HEIGHT * 4
+
 .GameKernelLine
         sta WSYNC
 
@@ -155,6 +181,11 @@ UpdateGameKernelPlayerAnim
     sta PLAYER_ANIM_CTR
 
 .NotFrame1
+    rts
+
+GenerateGameKernelPlayer
+    lda #PLAYER_COLOR
+    sta COLUP0
     rts
 
 GenerateGameKernelFloor
@@ -236,13 +267,13 @@ GenerateGameKernelBasePlayfield
     SET_POINTER PLAYFIELD + 20, Tile6
     SET_POINTER PLAYFIELD + 22, Tile5
 
-    SET_POINTER PLAYFIELD + 24, Tile5
+    SET_POINTER PLAYFIELD + 24, Tile6
     SET_POINTER PLAYFIELD + 26, Tile6
     SET_POINTER PLAYFIELD + 28, Tile5
     SET_POINTER PLAYFIELD + 30, Tile6
 
-    SET_POINTER PLAYFIELD + 32, Tile3
-    SET_POINTER PLAYFIELD + 34, Tile5
+    SET_POINTER PLAYFIELD + 32, Tile6
+    SET_POINTER PLAYFIELD + 34, Tile3B
     SET_POINTER PLAYFIELD + 36, Tile6
     SET_POINTER PLAYFIELD + 38, Tile5
 
@@ -378,12 +409,20 @@ Tile2
     .byte #%11111111 ; Tile 2
 
 Tile3
-    .byte #%00000111
-    .byte #%00001111
-    .byte #%00011111
-    .byte #%00111111
-    .byte #%01111111
     .byte #%11111111 ; Tile 3
+    .byte #%01111111
+    .byte #%00111111
+    .byte #%00011111
+    .byte #%00001111
+    .byte #%00000111
+
+Tile3B
+    .byte #%11111111 ; Tile 3B
+    .byte #%11111110
+    .byte #%11111100
+    .byte #%11111000
+    .byte #%11110000
+    .byte #%11100000
 
 Tile4
     .byte #%11111111
@@ -412,7 +451,7 @@ Tile6
 TileDivideTable
 .TileDivideTableY SET 0
     REPEAT TILE_HEIGHT
-        REPEAT 4
+        REPEAT 5
         .byte .TileDivideTableY
         REPEND
 .TileDivideTableY SET .TileDivideTableY + 1
