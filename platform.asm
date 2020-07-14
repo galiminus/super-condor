@@ -11,16 +11,27 @@ LAVA_COLOR                  = $38
 BACKGROUND_COLOR            = $01
 PLAYER_ANIM_SPEED           = 64
 PLAYER_COLOR                = $2a
+EYE_COLOR                   = $0e
+LASER_COLOR                 = $48
+
+LASER_ENABLED_RANGE         = 8 ; n frames before we enable the laser
+LASER_ENABLED_SPEED         = 6
+LASER_STEPS                 = 5
+
+EYE_START_X                 = 40
 
     SEG.U vars
     ORG $80
 
-HAS_SPRITE             ds 0
+TMP                    ds 1
 PLAYER_X               ds 1
 PLAYER_Y               ds 1
 PLAYER_Y_ADDR          ds 1
 PLAYER_ANIM_CTR        ds 1
 PLAYER_CHAR_FRAME      ds 2
+EYE_X                  ds 1
+LASER_TIMER            ds 1
+
 RANDOM                 ds 1
 PLAYFIELD              ds PLAYFIELD_WIDTH * PLAYFIELD_HEIGHT * 2
 
@@ -41,6 +52,12 @@ Reset
 
     SET_POINTER PLAYER_CHAR_FRAME, CharFrame0
 
+    lda #EYE_START_X
+    sta EYE_X
+
+    lda #0
+    sta LASER_TIMER
+
 NextFrame
     VERTICAL_SYNC
 
@@ -54,53 +71,35 @@ GameKernel
     TIMER_SETUP 37
 
     jsr UpdateRandom
-    jsr GenerateGameKernelBackground
-    jsr GenerateGameKernelBasePlayfield
-    jsr GenerateGameKernelPlayer
-    jsr UpdateGameKernelPlayerPosition
-    jsr UpdateGameKernelPlayerAnim
+
+    jsr VBlankHandleBackground
+    jsr VBlankHandlePlayfield  
+    jsr VBlankHandlePlayer
+    jsr VBlankHandleEye
+    jsr VBlankHandleLaser
+
+    sta WSYNC
+    sta HMOVE
 
     lda #%11111111
     sta PF0
     sta PF1
     sta PF2
 
-    lda PLAYER_Y
-    sta PLAYER_Y_ADDR
-
-    lda PLAYER_X
-    ldx #0
-    jsr FineAdjustSprite
-
     TIMER_WAIT
 
     TIMER_SETUP 192
 
-    sta WSYNC
-    sta HMOVE
-
     lda #0
     sta VBLANK
 
-    ldx #TILE_HEIGHT * 4
-.UpperScreenLine
-        and #$00000001
-        bne .NoStripe
-        lda #%11111111
-        sta PF0
-        sta PF1
-        sta PF2
-        jmp .HadStripe
-.NoStripe
-        lda #0
-        sta PF0
-        sta PF1
-        sta PF2
+    jsr DrawUpperPart
+    jsr DrawEyes
+    jsr DrawLaser
 
-.HadStripe
-        sta WSYNC
-        dex
-        bne .UpperScreenLine
+    lda #%11111111
+    sta PF1
+    sta PF2
 
 TILE_Y SET 0
     REPEAT PLAYFIELD_HEIGHT
@@ -119,6 +118,10 @@ TILE_Y SET 0
 .GameKernelLine
         sta WSYNC
 
+        ldy PLAYER_Y_ADDR
+        lda (PLAYER_CHAR_FRAME),y
+        sta GRP0
+
         ldy TileDivideTable,x
 
         lda (PLAYFIELD + TILE_Y * PLAYFIELD_WIDTH * 2),y
@@ -127,12 +130,9 @@ TILE_Y SET 0
         lda (PLAYFIELD + TILE_Y * PLAYFIELD_WIDTH * 2 + 2),y
         sta PF2
 
-        ldy PLAYER_Y_ADDR
-        lda (PLAYER_CHAR_FRAME),y
-        sta GRP0
-        inc PLAYER_Y_ADDR
+        inc PLAYER_Y_ADDR ; put this here to avoid race condition
 
-        ldy TileDivideTable,x
+        SLEEP 4
 
         lda (PLAYFIELD + TILE_Y * PLAYFIELD_WIDTH * 2 + 4),y
         sta PF2
@@ -159,11 +159,15 @@ TILE_Y SET TILE_Y + 1
     sta VBLANK
 
     jsr ClearGameKernelPlayfield
+    jsr UpdateGameKernelTimers
 
     TIMER_WAIT
     rts
 
-UpdateGameKernelPlayerAnim
+VBlankHandlePlayer
+    lda #PLAYER_COLOR
+    sta COLUP0
+
     dec PLAYER_ANIM_CTR
     lda PLAYER_ANIM_CTR
     cmp #PLAYER_ANIM_SPEED / 2
@@ -181,11 +185,152 @@ UpdateGameKernelPlayerAnim
     sta PLAYER_ANIM_CTR
 
 .NotFrame1
+
+	lda #%10000000
+	bit SWCHA
+	bne DoneMoveRight
+
+    inc PLAYER_X
+DoneMoveRight
+
+	lda #%01000000
+	bit SWCHA
+	bne DoneMoveLeft
+
+    dec PLAYER_X
+DoneMoveLeft
+
+	lda #%00100000
+	bit SWCHA
+	bne DoneMoveDown
+
+    dec PLAYER_Y
+DoneMoveDown
+
+	lda #%00010000
+	bit SWCHA
+	bne DoneMoveUp
+
+    inc PLAYER_Y
+DoneMoveUp
+
+    lda PLAYER_Y
+    sta PLAYER_Y_ADDR
+
+    lda PLAYER_X
+    ldx #0
+    jsr FineAdjustSprite
+
     rts
 
-GenerateGameKernelPlayer
-    lda #PLAYER_COLOR
-    sta COLUP0
+DrawUpperPart
+    ldx #TILE_HEIGHT * 2
+.UpperScreenLine
+        and #$00000001
+        bne .NoStripe
+        lda #%11111111
+        sta PF0
+        sta PF1
+        sta PF2
+        jmp .HadStripe
+.NoStripe
+        lda #0
+        sta PF0
+        sta PF1
+        sta PF2
+.HadStripe
+        sta WSYNC
+        dex
+        bne .UpperScreenLine
+    rts
+
+DrawEyes
+    lda #EYE_COLOR
+    sta COLUP1
+
+    ldx #0
+    lda #0
+    sta PF0
+    sta PF1
+    sta PF2
+.EyeLine
+        sta WSYNC
+
+        lda EyeFrame0,x
+        sta GRP1
+
+        inx
+        cpx #8
+        bne .EyeLine
+
+    lda #0
+    sta GRP0
+    sta GRP1
+    rts
+
+DrawLaser
+    SUBROUTINE
+    sta WSYNC
+
+    lda #LASER_COLOR
+    sta COLUP1
+
+    lda LASER_TIMER
+    beq .DoneWithLaser
+    sec
+    sbc #LASER_ENABLED_RANGE
+    bcc .DoneWithLaser
+    tay
+    lda LaserFrames,y
+    sta GRP1
+
+.DoneWithLaser
+    sta WSYNC
+    rts
+
+VBlankHandleLaser
+    lda EYE_X
+    clc
+    adc #8
+    clc
+    sbc PLAYER_X
+    cmp #16
+
+    bcs .NotInRange
+    jsr EnableLaser
+
+.NotInRange
+    rts
+
+VBlankHandleEye
+    lda #EYE_COLOR
+    sta COLUP1
+
+;     lda EYE_X
+;     sbc PLAYER_X
+;     lsr
+;     lsr
+;     lsr
+;     sta TMP
+
+;     beq DoneMove
+;     bcs MoveLeft
+
+;     lda EYE_X
+;     clc
+;     adc TMP
+;     jmp DoneMove
+
+; MoveLeft
+;     lda EYE_X
+;     clc
+;     sbc TMP
+
+; DoneMove
+    lda EYE_X
+    ldx #1
+    jsr FineAdjustSprite
+
     rts
 
 GenerateGameKernelFloor
@@ -206,7 +351,6 @@ GenerateGameKernelLava
     lda #$20
     sta COLUBK    
 
-
     REPEAT 4
     jsr UpdateRandom
     lda RANDOM
@@ -220,7 +364,7 @@ GenerateGameKernelLava
     lda RANDOM
     sta PF2
 
-        REPEAT 4
+        REPEAT 3
             sta WSYNC
         REPEND
     REPEND
@@ -231,15 +375,19 @@ GenerateGameKernelClean
     sta COLUPF
 
     lda #$00
-    sta COLUBK    
+    sta COLUBK
+
+    lda #%00000000
+    sta GRP1
+
     rts
 
-GenerateGameKernelBackground
+VBlankHandleBackground
     lda #PLAYFIELD_COLOR
     sta COLUPF ; set playfield color
     rts
 
-GenerateGameKernelBasePlayfield
+VBlankHandlePlayfield
     lda #BACKGROUND_COLOR
     sta COLUBK    
 
@@ -286,35 +434,31 @@ ClearGameKernelPlayfield
     sta PF2
     rts
 
-UpdateGameKernelPlayerPosition
-	lda #%10000000
-	bit SWCHA
-	bne DoneMoveRight
+UpdateGameKernelTimers
+    ; Handle all the laser timer part
+    SUBROUTINE
+    lda LASER_TIMER
+    beq .DoneWithLaser
 
-    inc PLAYER_X
-DoneMoveRight
+    cmp #LASER_ENABLED_RANGE + LASER_STEPS * LASER_ENABLED_SPEED
+    beq .DisableLaser
 
-	lda #%01000000
-	bit SWCHA
-	bne DoneMoveLeft
+    inc LASER_TIMER
+    jmp .DoneWithLaser
 
-    dec PLAYER_X
-DoneMoveLeft
+.DisableLaser
+    lda #0
+    sta LASER_TIMER
 
-	lda #%00100000
-	bit SWCHA
-	bne DoneMoveDown
+.DoneWithLaser
+    rts
 
-    dec PLAYER_Y
-DoneMoveDown
-
-	lda #%00010000
-	bit SWCHA
-	bne DoneMoveUp
-
-    inc PLAYER_Y
-DoneMoveUp
-
+EnableLaser
+    lda LASER_TIMER
+    bne .LaserAlreadyEnabled
+    lda #%00000001
+    sta LASER_TIMER
+.LaserAlreadyEnabled
     rts
 
 UpdateRandom
@@ -339,6 +483,46 @@ FineAdjustSprite
     sta HMP0,x
     sta RESP0,x              ; 21/ 26/31/36/41/46/51/56/61/66/71 - Set the rough position.
     rts
+
+EyeFrame0
+    .byte #%00111100
+    .byte #%11111110
+    .byte #%11111111
+    .byte #%11111111
+    .byte #%01111010
+    .byte #%01111110
+    .byte #%00111100
+    .byte #%00011000
+
+EyeFrameAttack
+    .byte #%00111100
+    .byte #%00111110
+    .byte #%01111111
+    .byte #%11111111
+    .byte #%11111010
+    .byte #%11111110
+    .byte #%00111100
+    .byte #%00011000
+
+LaserFrames
+    REPEAT LASER_ENABLED_RANGE
+    .byte #%00000000
+    REPEND
+    REPEAT LASER_ENABLED_SPEED
+    .byte #%11111111
+    REPEND
+    REPEAT LASER_ENABLED_SPEED
+    .byte #%01111110
+    REPEND
+    REPEAT LASER_ENABLED_SPEED
+    .byte #%01100110
+    REPEND
+    REPEAT LASER_ENABLED_SPEED
+    .byte #%00011000
+    REPEND
+    REPEAT LASER_ENABLED_SPEED
+    .byte #%00000000
+    REPEND
 
     BOUNDARY $00 ;; Force a page boundary crossing so "lda CharFrame0,y" takes the right amount of time
 CharFrame0
