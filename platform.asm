@@ -14,7 +14,7 @@ PLAYER_COLOR                = $2a
 EYE_COLOR                   = $0e
 LASER_COLOR                 = $48
 
-LASER_ENABLED_RANGE         = 8 ; n frames before we enable the laser
+LASER_ENABLED_RANGE         = 6 ; n frames before we enable the laser
 LASER_ENABLED_SPEED         = 6
 LASER_STEPS                 = 6
 
@@ -32,6 +32,7 @@ PLAYER_CHAR_FRAME      ds 2
 EYE_X                  ds 1
 KEY_X                  ds 1
 LASER_TIMER            ds 1
+LOST_TIMER             ds 1
 IS_KEY_COLLECTED       ds 1
 
 COLLISION_X            ds 1
@@ -202,6 +203,9 @@ VBlankHandlePlayer
     lda #PLAYER_COLOR
     sta COLUP0
 
+    lda LOST_TIMER
+    bne .DoneWithPlayer
+
     dec PLAYER_ANIM_CTR
     lda PLAYER_ANIM_CTR
     cmp #PLAYER_ANIM_SPEED / 2
@@ -281,8 +285,7 @@ DoneMoveUp
     sta COLLISION_TILE_Y
 
 
-
-
+.DoneWithPlayer
     lda PLAYER_Y
     sta PLAYER_Y_ADDR
 
@@ -392,6 +395,14 @@ VBlankHandleLaser
     jsr EnableLaser
 
 .NotInRange
+
+    ; check for collision Player/Laser
+    bit CXPPMM
+    bpl .NoPlayerCollision
+
+    jsr EnableLostRound
+
+.NoPlayerCollision
     rts
 
 VBlankHandleKey
@@ -426,6 +437,9 @@ VBlankHandleWall
 VBlankHandleEye
     lda #EYE_COLOR
     sta COLUP1
+
+    lda LASER_TIMER
+    bne .DoneMove
 
     lda EYE_X
     
@@ -527,9 +541,9 @@ VBlankHandlePlayfield
     sta PF2
 
     SET_POINTER PLAYFIELD + 0, Tile6
-    SET_POINTER PLAYFIELD + 2, Tile5
+    SET_POINTER PLAYFIELD + 2, Tile6
     SET_POINTER PLAYFIELD + 4, Tile6
-    SET_POINTER PLAYFIELD + 6, Tile5
+    SET_POINTER PLAYFIELD + 6, Tile6
 
     SET_POINTER PLAYFIELD + 8, Tile5
     SET_POINTER PLAYFIELD + 10, Tile6
@@ -577,6 +591,15 @@ UpdateGameKernelTimers
     sta LASER_TIMER
 
 .DoneWithLaser
+
+    lda LOST_TIMER
+    beq .DoneWithLostTimer
+    dec LOST_TIMER
+    bne .DontResetGame    
+    jmp Reset
+
+.DontResetGame
+.DoneWithLostTimer
     rts
 
 EnableLaser
@@ -597,6 +620,19 @@ UpdateRandom
     clc
     adc #17        ; RANDOM * 5 + 17
     sta RANDOM
+    rts
+
+EnableLostRound
+    lda #BACKGROUND_COLOR
+    sta COLUPF
+
+    lda LOST_TIMER
+    bne .LostTimerAlreadySet
+
+    lda #30
+    sta LOST_TIMER
+
+.LostTimerAlreadySet
     rts
 
 FineAdjustSprite
