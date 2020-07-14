@@ -9,7 +9,7 @@ TILE_HEIGHT                 = 6
 PLAYFIELD_COLOR             = $02
 LAVA_COLOR                  = $38
 BACKGROUND_COLOR            = $01
-PLAYER_ANIM_SPEED           = 64
+PLAYER_ANIM_SPEED           = 32
 PLAYER_COLOR                = $2a
 EYE_COLOR                   = $0e
 LASER_COLOR                 = $48
@@ -207,8 +207,15 @@ VBlankHandlePlayer
     sta COLUP0
 
     lda LOST_TIMER
-    bne .DoneWithPlayer
+    beq .DontFreezePlayer
+    lda PLAYER_Y
+    sta PLAYER_Y_ADDR
+    lda PLAYER_X
+    ldx #0
+    jsr FineAdjustSprite
+    rts
 
+.DontFreezePlayer
     dec PLAYER_ANIM_CTR
     lda PLAYER_ANIM_CTR
     cmp #PLAYER_ANIM_SPEED / 2
@@ -221,9 +228,6 @@ VBlankHandlePlayer
     cmp #0
     bne .NotFrame1
     SET_POINTER PLAYER_CHAR_FRAME, CharFrame1
-
-    lda #PLAYER_ANIM_SPEED
-    sta PLAYER_ANIM_CTR
 
 .NotFrame1
 
@@ -242,7 +246,15 @@ VBlankHandlePlayer
     cmp #158
     beq DoneMoveRight
 
+    lda PLAYER_ANIM_CTR
+    clc
+    cmp #PLAYER_ANIM_SPEED / 2
+    bcs .NotMoveRightFrame0
+    SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveRight0
+    jmp .NotMoveRightFrame1
+.NotMoveRightFrame0
     SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveRight1
+.NotMoveRightFrame1
 
     inc PLAYER_X
     inc PLAYER_X
@@ -255,7 +267,15 @@ DoneMoveRight
     cmp #10
     beq DoneMoveLeft
 
+    lda PLAYER_ANIM_CTR
+    clc
+    cmp #PLAYER_ANIM_SPEED / 2
+    bcs .NotMoveLeftFrame0
+    SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveLeft0
+    jmp .NotMoveLeftFrame1
+.NotMoveLeftFrame0
     SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveLeft1
+.NotMoveLeftFrame1
 
     dec PLAYER_X
     dec PLAYER_X
@@ -266,6 +286,7 @@ DoneMoveLeft
 	bne DoneMoveDown
 
     dec PLAYER_Y
+    dec PLAYER_Y
 DoneMoveDown
 
 	lda #%00010000
@@ -273,8 +294,16 @@ DoneMoveDown
 	bne DoneMoveUp
 
     inc PLAYER_Y
+    inc PLAYER_Y
 DoneMoveUp
 
+	bit SWCHA
+	beq NoGravity
+
+    dec PLAYER_Y ; gravity
+    dec PLAYER_Y ; gravity
+
+NoGravity
     lda PLAYER_Y
     sec
     cmp #8
@@ -285,6 +314,12 @@ DoneMoveUp
 .PlayerStillWithinBoundaries
 
 .DoneWithPlayer
+    lda PLAYER_ANIM_CTR
+    bne .DontResetPlayerAnimCtr
+    lda #PLAYER_ANIM_SPEED
+    sta PLAYER_ANIM_CTR
+.DontResetPlayerAnimCtr
+
     lda PLAYER_Y
     sta PLAYER_Y_ADDR
 
