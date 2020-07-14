@@ -14,9 +14,12 @@ PLAYER_COLOR                = $2a
 EYE_COLOR                   = $0e
 LASER_COLOR                 = $48
 
-LASER_ENABLED_RANGE         = 6 ; n frames before we enable the laser
+LASER_ENABLED_RANGE         = 4 ; n frames before we enable the laser
 LASER_ENABLED_SPEED         = 6
 LASER_STEPS                 = 6
+
+PLAYER_VERTICAL_SPEED       = 3
+PLAYER_HORIZONTAL_SPEED     = 2
 
 EYE_START_X                 = 120
 
@@ -29,8 +32,11 @@ PLAYER_Y               ds 1
 PLAYER_Y_ADDR          ds 1
 PLAYER_ANIM_CTR        ds 1
 PLAYER_CHAR_FRAME      ds 2
+PLAYER_VEC_Y           ds 1
+PLAYER_VEC_X           ds 1
 EYE_X                  ds 1
 KEY_X                  ds 1
+CURRENT_EYE_FRAME      ds 2
 LASER_TIMER            ds 1
 LOST_TIMER             ds 1
 IS_KEY_COLLECTED       ds 1
@@ -40,9 +46,6 @@ COLLISION_Y            ds 1
 
 COLLISION_TILE_X       ds 1
 COLLISION_TILE_Y       ds 1
-
-KEY_SPRITE             ds 6
-
 
 RANDOM                 ds 1
 PLAYFIELD              ds PLAYFIELD_WIDTH * PLAYFIELD_HEIGHT * 2
@@ -183,7 +186,7 @@ EndGameKernelLineLoop
     sta ENAM0
 
     jsr GenerateGameKernelFloor
-    jsr GenerateGameKernelLava
+    jsr DrawLava
     jsr GenerateGameKernelClean
 
     TIMER_WAIT
@@ -227,6 +230,14 @@ VBlankHandlePlayer
 	lda #%10000000
 	bit SWCHA
 	bne DoneMoveRight
+
+    lda IS_KEY_COLLECTED
+    bne .LimitWithWallClosed
+    lda PLAYER_X
+    cmp #146
+    beq DoneMoveRight
+
+.LimitWithWallClosed
     lda PLAYER_X
     cmp #158
     beq DoneMoveRight
@@ -246,43 +257,67 @@ DoneMoveRight
     dec PLAYER_X
 DoneMoveLeft
 
-	lda #%00100000
-	bit SWCHA
-	bne DoneMoveDown
+; 	lda #%00100000
+; 	bit SWCHA
+; 	bne DoneMoveDown
 
-    dec PLAYER_Y
-DoneMoveDown
+;     dec PLAYER_Y
+; DoneMoveDown
 
-	lda #%00010000
-	bit SWCHA
-	bne DoneMoveUp
+; 	lda #%00010000
+; 	bit SWCHA
+; 	bne DoneMoveUp
 
-    inc PLAYER_Y
-DoneMoveUp
+;     inc PLAYER_Y
+; DoneMoveUp
 
-    ; Compute collision pixel
-    lda PLAYER_X
-    clc
-    adc #4
-    sta COLLISION_X
+    bit INPT4
+    bmi DoneJump
+    lda #PLAYER_VERTICAL_SPEED
+    sta PLAYER_VEC_Y
+DoneJump
+
+    dec PLAYER_Y ; gravity
+
+    ; lda PLAYER_Y
+    ; sec
+    ; sbc PLAYER_VEC_Y
+    ; sta PLAYER_Y
+    ; dec PLAYER_VEC_Y
 
     lda PLAYER_Y
-    clc
-    adc #1
-    sta COLLISION_Y
+    sec
+    cmp #8
+    bcs .PlayerStillWithinBoundaries
+    lda #8
+    sta PLAYER_Y
 
-    ; Find the tile where this pixel lies
-    lda COLLISION_X
-    lsr
-    lsr
-    lsr
-    lsr
-    lsr ; divide by 64
-    sta COLLISION_TILE_X
+.PlayerStillWithinBoundaries
 
-    ; lda COLLISION_Y
-    lda #4
-    sta COLLISION_TILE_Y
+
+    ; ; Compute collision pixel
+    ; lda PLAYER_X
+    ; clc
+    ; adc #4
+    ; sta COLLISION_X
+
+    ; lda PLAYER_Y
+    ; clc
+    ; adc #1
+    ; sta COLLISION_Y
+
+    ; ; Find the tile where this pixel lies
+    ; lda COLLISION_X
+    ; lsr
+    ; lsr
+    ; lsr
+    ; lsr
+    ; lsr ; divide by 64
+    ; sta COLLISION_TILE_X
+
+    ; ; lda COLLISION_Y
+    ; lda #4
+    ; sta COLLISION_TILE_Y
 
 
 .DoneWithPlayer
@@ -320,7 +355,7 @@ DrawEyes
     lda #EYE_COLOR
     sta COLUP1
 
-    ldx #0
+    ldy #0
     lda #0
     sta PF0
     sta PF1
@@ -328,11 +363,11 @@ DrawEyes
 .EyeLine
         sta WSYNC
 
-        lda EyeFrame0,x
+        lda (CURRENT_EYE_FRAME),y
         sta GRP1
 
-        inx
-        cpx #8
+        iny
+        cpy #9
         bne .EyeLine
 
     lda #0
@@ -386,10 +421,10 @@ KeyWasCollected
 VBlankHandleLaser
     lda EYE_X
     clc
-    adc #8
+    adc #4
     clc
     sbc PLAYER_X
-    cmp #16
+    cmp #4
 
     bcs .NotInRange
     jsr EnableLaser
@@ -429,7 +464,7 @@ VBlankHandleKey
     rts
 
 VBlankHandleWall
-    lda #160
+    lda #155
     ldx #4
     jsr FineAdjustSprite
     rts
@@ -438,6 +473,7 @@ VBlankHandleEye
     lda #EYE_COLOR
     sta COLUP1
 
+    SET_POINTER CURRENT_EYE_FRAME, EyeFrameAttack
     lda LASER_TIMER
     bne .DoneMove
 
@@ -447,15 +483,21 @@ VBlankHandleEye
     cmp PLAYER_X
     beq .DoneMove
     bcc .MoveRight
+
+    ; Move Left
     lda EYE_X
     sec
     cmp #24
     bcc .DoneMove
 
+    SET_POINTER CURRENT_EYE_FRAME, EyeFrameLeft
+
     dec EYE_X
     jmp .DoneMove
 
 .MoveRight
+    SET_POINTER CURRENT_EYE_FRAME, EyeFrameRight
+
     lda EYE_X
     sec
     cmp #143
@@ -481,13 +523,17 @@ GenerateGameKernelFloor
     sta WSYNC
     rts
 
-GenerateGameKernelLava
+DrawLava
+    lda LOST_TIMER ; don't draw lava if we are in the "Lost" screen
+    bne .DontDrawLava
+
     lda #$23
     sta COLUPF ; set lava color
 
     lda #$20
     sta COLUBK    
 
+.DontDrawLava
     REPEAT 4
     jsr UpdateRandom
     lda RANDOM
@@ -545,19 +591,19 @@ VBlankHandlePlayfield
     SET_POINTER PLAYFIELD + 4, Tile6
     SET_POINTER PLAYFIELD + 6, Tile6
 
-    SET_POINTER PLAYFIELD + 8, Tile5
+    SET_POINTER PLAYFIELD + 8, Tile6
     SET_POINTER PLAYFIELD + 10, Tile6
     SET_POINTER PLAYFIELD + 12, Tile5
     SET_POINTER PLAYFIELD + 14, Tile6
 
-    SET_POINTER PLAYFIELD + 16, Tile6
-    SET_POINTER PLAYFIELD + 18, Tile5
-    SET_POINTER PLAYFIELD + 20, Tile6
-    SET_POINTER PLAYFIELD + 22, Tile5
+    SET_POINTER PLAYFIELD + 16, Tile5
+    SET_POINTER PLAYFIELD + 18, Tile6
+    SET_POINTER PLAYFIELD + 20, Tile5
+    SET_POINTER PLAYFIELD + 22, Tile6
 
     SET_POINTER PLAYFIELD + 24, Tile6
     SET_POINTER PLAYFIELD + 26, Tile6
-    SET_POINTER PLAYFIELD + 28, Tile6
+    SET_POINTER PLAYFIELD + 28, Tile5
     SET_POINTER PLAYFIELD + 30, Tile6
 
     SET_POINTER PLAYFIELD + 32, Tile6
@@ -629,7 +675,7 @@ EnableLostRound
     lda LOST_TIMER
     bne .LostTimerAlreadySet
 
-    lda #30
+    lda #35
     sta LOST_TIMER
 
 .LostTimerAlreadySet
@@ -647,95 +693,105 @@ FineAdjustSprite
     sta RESP0,x              ; 21/ 26/31/36/41/46/51/56/61/66/71 - Set the rough position.
     rts
 
-EyeFrame0
-    .byte #%00111100
-    .byte #%11111110
-    .byte #%11111111
-    .byte #%11111111
-    .byte #%01111010
-    .byte #%01111110
-    .byte #%00111100
-    .byte #%00011000
+EyeFrameLeft
+    .byte #%00111100;--
+    .byte #%01111110;--
+    .byte #%01111110;--
+    .byte #%01001110;--
+    .byte #%01011110;--
+    .byte #%01001110;--
+    .byte #%01001110;--
+    .byte #%00111100;--
+
+EyeFrameRight
+    .byte #%00111100;--
+    .byte #%01111110;--
+    .byte #%01111110;--
+    .byte #%01110010;--
+    .byte #%01111010;--
+    .byte #%01110010;--
+    .byte #%01110010;--
+    .byte #%00111100;--
 
 EyeFrameAttack
-    .byte #%00111100
-    .byte #%00111110
-    .byte #%01111111
-    .byte #%11111111
-    .byte #%11111010
-    .byte #%11111110
-    .byte #%00111100
-    .byte #%00011000
+    .byte #%01111100;--
+    .byte #%11111110;--
+    .byte #%11111110;--
+    .byte #%11000110;--
+    .byte #%11001110;--
+    .byte #%11000110;--
+    .byte #%11000110;--
+    .byte #%01111100;--
 
 LaserFrames
     REPEAT LASER_ENABLED_RANGE
     .byte #%00000000
     REPEND
     REPEAT LASER_ENABLED_SPEED
-    .byte #%01111110
+    .byte #%01111100
     REPEND
     REPEAT LASER_ENABLED_SPEED
-    .byte #%11111111
+    .byte #%11111110
     REPEND
     REPEAT LASER_ENABLED_SPEED
-    .byte #%01111110
+    .byte #%01111100
     REPEND
     REPEAT LASER_ENABLED_SPEED
-    .byte #%00111100
+    .byte #%00111000
     REPEND
     REPEAT LASER_ENABLED_SPEED
-    .byte #%00011000
+    .byte #%00010000
     REPEND
     REPEAT LASER_ENABLED_SPEED
     .byte #%00000000
     REPEND
 
-    BOUNDARY $00 ;; Force a page boundary crossing so "lda CharFrame0,y" takes the right amount of time
+    BOUNDARY $00
 CharFrame0
     REPEAT 112
     .byte #%00000000
     REPEND
-    .byte #%00111100
-    .byte #%11111110
-    .byte #%11111111
-    .byte #%11111111
-    .byte #%01111010
-    .byte #%01111110
-    .byte #%00111100
-    .byte #%00011000
-    .byte #%00111100
-    .byte #%11111110
-    .byte #%11111111
-    .byte #%11111111
-    .byte #%01111010
-    .byte #%01111110
-    .byte #%00111100
-    .byte #%00011000
+        .byte #%00010000;--
+        .byte #%00011100;--
+        .byte #%00011010;--
+        .byte #%00011110;--
+        .byte #%11011100;--
+        .byte #%01111100;--
+        .byte #%00111100;--
+        .byte #%01111100;--
+        .byte #%01111111;--
+        .byte #%01111111;--
+        .byte #%00111110;--
+        .byte #%00111100;--
+        .byte #%00011100;--
+        .byte #%00010100;--
+        .byte #%00010100;--
+        .byte #%00110110;--
     REPEAT 112
     .byte #%00000000
     REPEND
 
-    BOUNDARY $00 ;; Force a page boundary crossing so "lda CharFrame0,y" takes the right amount of time
+    BOUNDARY $00
 CharFrame1
     REPEAT 112
     .byte #%00000000
     REPEND
-    .byte #%00111100
-    .byte #%00111110
-    .byte #%01111111
-    .byte #%11111111
-    .byte #%11111010
-    .byte #%11111110
-    .byte #%00111100
-    .byte #%00011000
-    .byte #%00111100
-    .byte #%00111110
-    .byte #%01111111
-    .byte #%11111111
-    .byte #%11111010
-    .byte #%11111110
-    .byte #%00111100
-    .byte #%00011000
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00010000;--
+        .byte #%00011100;--
+        .byte #%00011010;--
+        .byte #%00011110;--
+        .byte #%11011100;--
+        .byte #%01111100;--
+        .byte #%00111100;--
+        .byte #%01111100;--
+        .byte #%01111111;--
+        .byte #%01111111;--
+        .byte #%00111110;--
+        .byte #%00011100;--
+        .byte #%00011100;--
+        .byte #%00110110;--
     REPEAT 112
     .byte #%00000000
     REPEND
