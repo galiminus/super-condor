@@ -16,9 +16,9 @@ LASER_COLOR                 = $48
 
 LASER_ENABLED_RANGE         = 8 ; n frames before we enable the laser
 LASER_ENABLED_SPEED         = 6
-LASER_STEPS                 = 5
+LASER_STEPS                 = 6
 
-EYE_START_X                 = 40
+EYE_START_X                 = 120
 
     SEG.U vars
     ORG $80
@@ -30,7 +30,18 @@ PLAYER_Y_ADDR          ds 1
 PLAYER_ANIM_CTR        ds 1
 PLAYER_CHAR_FRAME      ds 2
 EYE_X                  ds 1
+KEY_X                  ds 1
 LASER_TIMER            ds 1
+IS_KEY_COLLECTED       ds 1
+
+COLLISION_X            ds 1
+COLLISION_Y            ds 1
+
+COLLISION_TILE_X       ds 1
+COLLISION_TILE_Y       ds 1
+
+KEY_SPRITE             ds 6
+
 
 RANDOM                 ds 1
 PLAYFIELD              ds PLAYFIELD_WIDTH * PLAYFIELD_HEIGHT * 2
@@ -44,7 +55,7 @@ Reset
     lda #PLAYER_ANIM_SPEED
     sta PLAYER_ANIM_CTR
 
-    lda #9
+    lda #8
     sta PLAYER_Y
 
     lda #10
@@ -57,6 +68,12 @@ Reset
 
     lda #0
     sta LASER_TIMER
+
+    lda #40
+    sta KEY_X
+
+    lda #0
+    sta IS_KEY_COLLECTED
 
 NextFrame
     VERTICAL_SYNC
@@ -77,6 +94,8 @@ GameKernel
     jsr VBlankHandlePlayer
     jsr VBlankHandleEye
     jsr VBlankHandleLaser
+    jsr VBlankHandleKey
+    jsr VBlankHandleWall
 
     sta WSYNC
     sta HMOVE
@@ -96,6 +115,8 @@ GameKernel
     jsr DrawUpperPart
     jsr DrawEyes
     jsr DrawLaser
+    jsr DrawWall
+    sta WSYNC
 
     lda #%11111111
     sta PF1
@@ -106,7 +127,7 @@ TILE_Y SET 0
     SUBROUTINE
 
     IF TILE_Y = PLAYFIELD_HEIGHT - 1
-        lda #%00010000
+        lda #%00000000
         sta PF0
     ELSE
         lda #%11110000
@@ -114,7 +135,6 @@ TILE_Y SET 0
     ENDIF ; Build entrance and exit
 
     ldx #TILE_HEIGHT * 4
-
 .GameKernelLine
         sta WSYNC
 
@@ -140,12 +160,26 @@ TILE_Y SET 0
         lda (PLAYFIELD + TILE_Y * PLAYFIELD_WIDTH * 2 + 6),y
         sta PF1
 
+        IF TILE_Y = 0 ; Draw the key
+            iny
+            sty ENAM1
+        ELSE
+            lda #0
+            sta ENAM1
+        ENDIF
+
         dex
         bne .GameKernelLine
 
 TILE_Y SET TILE_Y + 1
     REPEND
+
+EndGameKernelLineLoop
     sta WSYNC
+
+    lda #0
+    sta GRP0
+    sta ENAM0
 
     jsr GenerateGameKernelFloor
     jsr GenerateGameKernelLava
@@ -189,14 +223,22 @@ VBlankHandlePlayer
 	lda #%10000000
 	bit SWCHA
 	bne DoneMoveRight
+    lda PLAYER_X
+    cmp #158
+    beq DoneMoveRight
 
+    inc PLAYER_X
     inc PLAYER_X
 DoneMoveRight
 
 	lda #%01000000
 	bit SWCHA
 	bne DoneMoveLeft
+    lda PLAYER_X
+    cmp #10
+    beq DoneMoveLeft
 
+    dec PLAYER_X
     dec PLAYER_X
 DoneMoveLeft
 
@@ -213,6 +255,33 @@ DoneMoveDown
 
     inc PLAYER_Y
 DoneMoveUp
+
+    ; Compute collision pixel
+    lda PLAYER_X
+    clc
+    adc #4
+    sta COLLISION_X
+
+    lda PLAYER_Y
+    clc
+    adc #1
+    sta COLLISION_Y
+
+    ; Find the tile where this pixel lies
+    lda COLLISION_X
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr ; divide by 64
+    sta COLLISION_TILE_X
+
+    ; lda COLLISION_Y
+    lda #4
+    sta COLLISION_TILE_Y
+
+
+
 
     lda PLAYER_Y
     sta PLAYER_Y_ADDR
@@ -272,20 +341,43 @@ DrawLaser
     SUBROUTINE
     sta WSYNC
 
+    lda #0
+    sta COLUP1
+
+    lda IS_KEY_COLLECTED
+    bne .DontEnableLaserColor; the key wasn't collected, we enable the laser color for it since it's M1
     lda #LASER_COLOR
     sta COLUP1
 
+.DontEnableLaserColor
     lda LASER_TIMER
-    beq .DoneWithLaser
+    beq .DoneWithLaser ; the laser is not active
+
     sec
     sbc #LASER_ENABLED_RANGE
-    bcc .DoneWithLaser
+    bcc .DoneWithLaser ; the laser is not yet active but will be soon
+
     tay
     lda LaserFrames,y
     sta GRP1
 
+    sec
+    cpy #LASER_ENABLED_RANGE
+    bcc .DoneWithLaser
+
+    lda #LASER_COLOR
+    sta COLUP1
+
 .DoneWithLaser
     sta WSYNC
+    rts
+
+DrawWall
+    lda IS_KEY_COLLECTED
+    bne KeyWasCollected
+    lda #%00001111
+    sta ENABL
+KeyWasCollected
     rts
 
 VBlankHandleLaser
@@ -302,31 +394,62 @@ VBlankHandleLaser
 .NotInRange
     rts
 
+VBlankHandleKey
+    bit CXM1P
+    bpl .NoKeyCollection
+    lda #1
+    sta IS_KEY_COLLECTED
+
+.NoKeyCollection
+    lda IS_KEY_COLLECTED
+    beq .PutKeyInPlayfield
+
+    lda EYE_X ; We hide the key in the laser beam because we don't have the time to check
+              ; for IS_KEY_COLLECTED in the kernel
+    clc
+    adc #4
+    jmp .DoneKeyPosition
+.PutKeyInPlayfield
+    lda KEY_X
+.DoneKeyPosition
+    ldx #3
+    jsr FineAdjustSprite
+
+    rts
+
+VBlankHandleWall
+    lda #160
+    ldx #4
+    jsr FineAdjustSprite
+    rts
+
 VBlankHandleEye
     lda #EYE_COLOR
     sta COLUP1
 
-;     lda EYE_X
-;     sbc PLAYER_X
-;     lsr
-;     lsr
-;     lsr
-;     sta TMP
+    lda EYE_X
+    
+    sec
+    cmp PLAYER_X
+    beq .DoneMove
+    bcc .MoveRight
+    lda EYE_X
+    sec
+    cmp #24
+    bcc .DoneMove
 
-;     beq DoneMove
-;     bcs MoveLeft
+    dec EYE_X
+    jmp .DoneMove
 
-;     lda EYE_X
-;     clc
-;     adc TMP
-;     jmp DoneMove
+.MoveRight
+    lda EYE_X
+    sec
+    cmp #143
+    bcs .DoneMove
 
-; MoveLeft
-;     lda EYE_X
-;     clc
-;     sbc TMP
+    inc EYE_X
 
-; DoneMove
+.DoneMove
     lda EYE_X
     ldx #1
     jsr FineAdjustSprite
@@ -380,6 +503,9 @@ GenerateGameKernelClean
     lda #%00000000
     sta GRP1
 
+    lda #%00000000
+    sta ENABL
+
     rts
 
 VBlankHandleBackground
@@ -417,13 +543,13 @@ VBlankHandlePlayfield
 
     SET_POINTER PLAYFIELD + 24, Tile6
     SET_POINTER PLAYFIELD + 26, Tile6
-    SET_POINTER PLAYFIELD + 28, Tile5
+    SET_POINTER PLAYFIELD + 28, Tile6
     SET_POINTER PLAYFIELD + 30, Tile6
 
     SET_POINTER PLAYFIELD + 32, Tile6
     SET_POINTER PLAYFIELD + 34, Tile3B
     SET_POINTER PLAYFIELD + 36, Tile6
-    SET_POINTER PLAYFIELD + 38, Tile5
+    SET_POINTER PLAYFIELD + 38, Tile6
 
     rts
 
@@ -458,6 +584,7 @@ EnableLaser
     bne .LaserAlreadyEnabled
     lda #%00000001
     sta LASER_TIMER
+
 .LaserAlreadyEnabled
     rts
 
@@ -509,13 +636,16 @@ LaserFrames
     .byte #%00000000
     REPEND
     REPEAT LASER_ENABLED_SPEED
+    .byte #%01111110
+    REPEND
+    REPEAT LASER_ENABLED_SPEED
     .byte #%11111111
     REPEND
     REPEAT LASER_ENABLED_SPEED
     .byte #%01111110
     REPEND
     REPEAT LASER_ENABLED_SPEED
-    .byte #%01100110
+    .byte #%00111100
     REPEND
     REPEAT LASER_ENABLED_SPEED
     .byte #%00011000
