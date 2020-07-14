@@ -242,6 +242,8 @@ VBlankHandlePlayer
     cmp #158
     beq DoneMoveRight
 
+    SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveRight1
+
     inc PLAYER_X
     inc PLAYER_X
 DoneMoveRight
@@ -253,37 +255,25 @@ DoneMoveRight
     cmp #10
     beq DoneMoveLeft
 
+    SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveLeft1
+
     dec PLAYER_X
     dec PLAYER_X
 DoneMoveLeft
 
-; 	lda #%00100000
-; 	bit SWCHA
-; 	bne DoneMoveDown
+	lda #%00100000
+	bit SWCHA
+	bne DoneMoveDown
 
-;     dec PLAYER_Y
-; DoneMoveDown
+    dec PLAYER_Y
+DoneMoveDown
 
-; 	lda #%00010000
-; 	bit SWCHA
-; 	bne DoneMoveUp
+	lda #%00010000
+	bit SWCHA
+	bne DoneMoveUp
 
-;     inc PLAYER_Y
-; DoneMoveUp
-
-    bit INPT4
-    bmi DoneJump
-    lda #PLAYER_VERTICAL_SPEED
-    sta PLAYER_VEC_Y
-DoneJump
-
-    dec PLAYER_Y ; gravity
-
-    ; lda PLAYER_Y
-    ; sec
-    ; sbc PLAYER_VEC_Y
-    ; sta PLAYER_Y
-    ; dec PLAYER_VEC_Y
+    inc PLAYER_Y
+DoneMoveUp
 
     lda PLAYER_Y
     sec
@@ -293,32 +283,6 @@ DoneJump
     sta PLAYER_Y
 
 .PlayerStillWithinBoundaries
-
-
-    ; ; Compute collision pixel
-    ; lda PLAYER_X
-    ; clc
-    ; adc #4
-    ; sta COLLISION_X
-
-    ; lda PLAYER_Y
-    ; clc
-    ; adc #1
-    ; sta COLLISION_Y
-
-    ; ; Find the tile where this pixel lies
-    ; lda COLLISION_X
-    ; lsr
-    ; lsr
-    ; lsr
-    ; lsr
-    ; lsr ; divide by 64
-    ; sta COLLISION_TILE_X
-
-    ; ; lda COLLISION_Y
-    ; lda #4
-    ; sta COLLISION_TILE_Y
-
 
 .DoneWithPlayer
     lda PLAYER_Y
@@ -792,6 +756,106 @@ CharFrame1
         .byte #%00011100;--
         .byte #%00011100;--
         .byte #%00110110;--
+    REPEAT 112
+    .byte #%00000000
+    REPEND
+
+    BOUNDARY $00
+CharFrameMoveRight0
+    REPEAT 112
+    .byte #%00000000
+    REPEND
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%01110000;--
+        .byte #%01111110;--
+        .byte #%11111101;--
+        .byte #%11111111;--
+        .byte #%01111110;--
+        .byte #%11111100;--
+        .byte #%11111000;--
+        .byte #%00101000;--
+        .byte #%00111100;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+    REPEAT 112
+    .byte #%00000000
+    REPEND
+
+    BOUNDARY $00
+CharFrameMoveRight1
+    REPEAT 112
+    .byte #%00000000
+    REPEND
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%01110000;--
+        .byte #%11111110;--
+        .byte #%11111101;--
+        .byte #%01111111;--
+        .byte #%01111110;--
+        .byte #%11111100;--
+        .byte #%11111000;--
+        .byte #%01111000;--
+        .byte #%00111100;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+    REPEAT 112
+    .byte #%00000000
+    REPEND
+
+    BOUNDARY $00
+CharFrameMoveLeft0
+    REPEAT 112
+    .byte #%00000000
+    REPEND
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00001110;--
+        .byte #%01111110;--
+        .byte #%10111111;--
+        .byte #%11111111;--
+        .byte #%01111110;--
+        .byte #%00111111;--
+        .byte #%00011111;--
+        .byte #%00010100;--
+        .byte #%00111100;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+    REPEAT 112
+    .byte #%00000000
+    REPEND
+
+    BOUNDARY $00
+CharFrameMoveLeft1
+    REPEAT 112
+    .byte #%00000000
+    REPEND
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00000000;--
+        .byte #%00001110;--
+        .byte #%01111111;--
+        .byte #%10111111;--
+        .byte #%11111110;--
+        .byte #%01111110;--
+        .byte #%00111111;--
+        .byte #%00011111;--
+        .byte #%00011110;--
+        .byte #%00111100;--
+        .byte #%00000000;--
+        .byte #%00000000;--
     REPEAT 112
     .byte #%00000000
     REPEND
