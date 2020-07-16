@@ -13,13 +13,11 @@ PLAYER_ANIM_SPEED           = 32
 PLAYER_COLOR                = $2a
 EYE_COLOR                   = $0e
 LASER_COLOR                 = $48
+PLAYER_START_Y              = 13
 
 LASER_ENABLED_RANGE         = 4 ; n frames before we enable the laser
-LASER_ENABLED_SPEED         = 6
+LASER_ENABLED_SPEED         = 12
 LASER_STEPS                 = 6
-
-PLAYER_VERTICAL_SPEED       = 3
-PLAYER_HORIZONTAL_SPEED     = 2
 
 EYE_START_X                 = 120
 
@@ -29,6 +27,9 @@ EYE_START_X                 = 120
 TMP                    ds 1
 PLAYER_X               ds 1
 PLAYER_Y               ds 1
+PREVIOUS_PLAYER_X      ds 1
+PREVIOUS_PLAYER_Y      ds 1
+
 PLAYER_Y_ADDR          ds 1
 PLAYER_ANIM_CTR        ds 1
 PLAYER_CHAR_FRAME      ds 2
@@ -50,6 +51,14 @@ COLLISION_TILE_Y       ds 1
 RANDOM                 ds 1
 PLAYFIELD              ds PLAYFIELD_WIDTH * PLAYFIELD_HEIGHT * 2
 
+TIMER_FRAME_COUNT      ds 1
+TIMER_DIGITS           ds 8
+TIMER_DIGITS_BUFFER    ds 1
+TIMER                  ds 2
+TIMER_DIGIT_DEC        ds 4
+
+SIDE_DECORATION        ds 1
+
     SEG
     ORG $F000
 
@@ -59,7 +68,7 @@ Reset
     lda #PLAYER_ANIM_SPEED
     sta PLAYER_ANIM_CTR
 
-    lda #8
+    lda #PLAYER_START_Y
     sta PLAYER_Y
 
     lda #10
@@ -78,6 +87,11 @@ Reset
 
     lda #0
     sta IS_KEY_COLLECTED
+
+    SET_POINTER TIMER_DIGITS + 0, Number0
+    SET_POINTER TIMER_DIGITS + 2, Number0
+    SET_POINTER TIMER_DIGITS + 4, Number0
+    SET_POINTER TIMER_DIGITS + 6, Number0
 
 NextFrame
     VERTICAL_SYNC
@@ -100,6 +114,9 @@ GameKernel
     jsr VBlankHandleLaser
     jsr VBlankHandleKey
     jsr VBlankHandleWall
+    jsr VBlankHandleTimer
+
+    sta CXCLR ; clean collisions
 
     sta WSYNC
     sta HMOVE
@@ -117,14 +134,24 @@ GameKernel
     sta VBLANK
 
     jsr DrawUpperPart
-    jsr DrawEyes
-    jsr DrawLaser
-    jsr DrawWall
     sta WSYNC
+    jsr DrawEyes
+    sta WSYNC
+    jsr DrawLaser
+    sta WSYNC
+    ; jsr VBlankHandleWall ; no idea why I had to put it here again
 
     lda #%11111111
+    sta PF0
     sta PF1
     sta PF2
+
+    jsr DrawWall
+
+    lda #192
+    sta SIDE_DECORATION
+
+    sta WSYNC
 
 TILE_Y SET 0
     REPEAT PLAYFIELD_HEIGHT
@@ -134,11 +161,12 @@ TILE_Y SET 0
         lda #%00000000
         sta PF0
     ELSE
-        lda #%11110000
+        ; lda #%11000000
+        lda SIDE_DECORATION ; some graphics stuff, looks like playstation 3D!!!
         sta PF0
     ENDIF ; Build entrance and exit
 
-    ldx #TILE_HEIGHT * 4
+    ldx #TILE_HEIGHT * 4 - 1
 .GameKernelLine
         sta WSYNC
 
@@ -166,6 +194,7 @@ TILE_Y SET 0
 
         IF TILE_Y = 0 ; Draw the key
             iny
+            nop
             sty ENAM1
         ELSE
             lda #0
@@ -174,7 +203,11 @@ TILE_Y SET 0
 
         dex
         bne .GameKernelLine
-
+    lda #0
+    sta PF1
+    sta PF2
+    dec SIDE_DECORATION
+    sta WSYNC
 TILE_Y SET TILE_Y + 1
     REPEND
 
@@ -185,8 +218,14 @@ EndGameKernelLineLoop
     sta GRP0
     sta ENAM0
 
-    jsr GenerateGameKernelFloor
+    jsr DrawFloor
+    sta WSYNC
     jsr DrawLava
+    sta WSYNC
+
+    jsr DrawTimer
+    sta WSYNC
+
     jsr GenerateGameKernelClean
 
     TIMER_WAIT
@@ -202,6 +241,64 @@ EndGameKernelLineLoop
     TIMER_WAIT
     rts
 
+VBlankHandleTimer
+    lda TIMER_FRAME_COUNT
+    cmp #60 ; 60 frames per seconds
+    beq .FrameCountReached
+
+    inc TIMER_FRAME_COUNT
+    rts
+
+.FrameCountReached
+    lda #0
+    sta TIMER_FRAME_COUNT
+
+    ; update the timer digits, I know it's ugly x)
+    inc TIMER_DIGIT_DEC + 0
+    lda TIMER_DIGIT_DEC + 0
+    cmp #10
+    bne .DoneUpdateTimerDigits
+
+    lda #0
+    sta TIMER_DIGIT_DEC + 0
+    inc TIMER_DIGIT_DEC + 1
+    lda TIMER_DIGIT_DEC + 1
+    cmp #10
+    bne .DoneUpdateTimerDigits
+
+    lda #0
+    sta TIMER_DIGIT_DEC + 1
+    inc TIMER_DIGIT_DEC + 2
+    lda TIMER_DIGIT_DEC + 2
+    cmp #10
+    bne .DoneUpdateTimerDigits
+
+    lda #0
+    sta TIMER_DIGIT_DEC + 2
+    inc TIMER_DIGIT_DEC + 3
+    lda TIMER_DIGIT_DEC + 3
+    cmp #10
+    bne .DoneUpdateTimerDigits
+
+.DoneUpdateTimerDigits
+
+TIMER_DIGIT_DEC_INDEX SET 0
+    REPEAT 4
+TIMER_DIGIT_VALUE SET 0
+    REPEAT 10
+        SUBROUTINE
+        lda TIMER_DIGIT_DEC + TIMER_DIGIT_DEC_INDEX
+        cmp #TIMER_DIGIT_VALUE
+        bne .NextDigit
+        SET_POINTER TIMER_DIGITS + TIMER_DIGIT_DEC_INDEX * 2, Number0 + TIMER_DIGIT_VALUE * 8
+.NextDigit
+TIMER_DIGIT_VALUE SET TIMER_DIGIT_VALUE + 1
+    REPEND
+TIMER_DIGIT_DEC_INDEX SET TIMER_DIGIT_DEC_INDEX + 1
+    REPEND
+
+    rts
+
 VBlankHandlePlayer
     lda #PLAYER_COLOR
     sta COLUP0
@@ -213,6 +310,10 @@ VBlankHandlePlayer
     lda PLAYER_X
     ldx #0
     jsr FineAdjustSprite
+
+    lda #EYE_COLOR
+    sta COLUP0 ; set the player color to white when we get hit
+
     rts
 
 .DontFreezePlayer
@@ -285,8 +386,7 @@ DoneMoveLeft
 	bit SWCHA
 	bne DoneMoveDown
 
-    dec PLAYER_Y
-    dec PLAYER_Y
+    ; dec PLAYER_Y
 DoneMoveDown
 
 	lda #%00010000
@@ -294,21 +394,20 @@ DoneMoveDown
 	bne DoneMoveUp
 
     inc PLAYER_Y
-    inc PLAYER_Y
 DoneMoveUp
 
+	lda #%00010000
 	bit SWCHA
 	beq NoGravity
 
-    dec PLAYER_Y ; gravity
     dec PLAYER_Y ; gravity
 
 NoGravity
     lda PLAYER_Y
     sec
-    cmp #8
+    cmp #PLAYER_START_Y
     bcs .PlayerStillWithinBoundaries
-    lda #8
+    lda #PLAYER_START_Y
     sta PLAYER_Y
 
 .PlayerStillWithinBoundaries
@@ -320,6 +419,25 @@ NoGravity
     sta PLAYER_ANIM_CTR
 .DontResetPlayerAnimCtr
 
+    ; check for playfield/player collision
+
+    bit CXP0FB
+    bpl .NoPlayfieldPlayerCollision
+
+     ; we got a collision, roll back to the previous position
+    lda PREVIOUS_PLAYER_X
+    sta PLAYER_X
+    lda PREVIOUS_PLAYER_Y
+    sta PLAYER_Y
+    jmp .DonePlayfieldPlayerCollision
+
+.NoPlayfieldPlayerCollision
+    ; no collision occured, store the new position values
+    ; lda PLAYER_X
+    ; sta PREVIOUS_PLAYER_X
+    ; lda PLAYER_Y
+    ; sta PREVIOUS_PLAYER_Y
+.DonePlayfieldPlayerCollision
     lda PLAYER_Y
     sta PLAYER_Y_ADDR
 
@@ -354,11 +472,12 @@ DrawEyes
     lda #EYE_COLOR
     sta COLUP1
 
-    ldy #0
     lda #0
     sta PF0
     sta PF1
     sta PF2
+
+    ldy #0
 .EyeLine
         sta WSYNC
 
@@ -511,7 +630,7 @@ VBlankHandleEye
 
     rts
 
-GenerateGameKernelFloor
+DrawFloor
     lda #%11111111
     sta PF0
     sta PF1
@@ -523,6 +642,9 @@ GenerateGameKernelFloor
     rts
 
 DrawLava
+    lda #%00000000
+    sta ENABL
+
     lda LOST_TIMER ; don't draw lava if we are in the "Lost" screen
     bne .DontDrawLava
 
@@ -552,6 +674,71 @@ DrawLava
     REPEND
     rts
 
+DrawTimer
+    sta WSYNC
+
+    lda #$00
+    sta COLUBK
+
+    lda #0
+    sta PF0
+    sta PF1
+    sta PF2
+
+    lda #%00000000
+    sta GRP1
+
+    lda #00
+    sta COLUP0
+
+    lda #EYE_COLOR
+    sta COLUP1
+
+    lda #%00000010
+    sta CTRLPF ; use player color to hide the left part
+
+    sta WSYNC
+
+    ldy #0
+.TimerLine
+    sta WSYNC
+
+    lda (TIMER_DIGITS + 6),y
+    and #%11110000
+    sta TIMER_DIGITS_BUFFER
+
+    lda (TIMER_DIGITS + 4),y
+    lsr
+    lsr
+    lsr
+    lsr
+    and #%00001111
+    ora TIMER_DIGITS_BUFFER
+    asl
+    sta PF1
+
+    lda (TIMER_DIGITS + 2),y
+    and #%00001111
+    sta TIMER_DIGITS_BUFFER
+    lda (TIMER_DIGITS + 0),y
+    asl
+    asl
+    asl
+    asl
+    ora TIMER_DIGITS_BUFFER
+    lsr
+    sta PF2
+
+    iny
+    cpy #8
+    bne .TimerLine
+
+    lda #0
+    sta PF1
+    sta PF2
+
+    rts
+
 GenerateGameKernelClean
     lda #$00
     sta COLUPF
@@ -565,6 +752,14 @@ GenerateGameKernelClean
     lda #%00000000
     sta ENABL
 
+    bit CXP0FB
+    bmi .PlayfieldPlayerCollision
+    lda PLAYER_X
+    sta PREVIOUS_PLAYER_X
+    lda PLAYER_Y
+    sta PREVIOUS_PLAYER_Y
+
+.PlayfieldPlayerCollision
     rts
 
 VBlankHandleBackground
@@ -606,7 +801,7 @@ VBlankHandlePlayfield
     SET_POINTER PLAYFIELD + 30, Tile6
 
     SET_POINTER PLAYFIELD + 32, Tile6
-    SET_POINTER PLAYFIELD + 34, Tile3B
+    SET_POINTER PLAYFIELD + 34, Tile3
     SET_POINTER PLAYFIELD + 36, Tile6
     SET_POINTER PLAYFIELD + 38, Tile6
 
@@ -692,36 +887,6 @@ FineAdjustSprite
     sta RESP0,x              ; 21/ 26/31/36/41/46/51/56/61/66/71 - Set the rough position.
     rts
 
-EyeFrameLeft
-    .byte #%00111100;--
-    .byte #%01111110;--
-    .byte #%01111110;--
-    .byte #%01001110;--
-    .byte #%01011110;--
-    .byte #%01001110;--
-    .byte #%01001110;--
-    .byte #%00111100;--
-
-EyeFrameRight
-    .byte #%00111100;--
-    .byte #%01111110;--
-    .byte #%01111110;--
-    .byte #%01110010;--
-    .byte #%01111010;--
-    .byte #%01110010;--
-    .byte #%01110010;--
-    .byte #%00111100;--
-
-EyeFrameAttack
-    .byte #%01111100;--
-    .byte #%11111110;--
-    .byte #%11111110;--
-    .byte #%11000110;--
-    .byte #%11001110;--
-    .byte #%11000110;--
-    .byte #%11000110;--
-    .byte #%01111100;--
-
 LaserFrames
     REPEAT LASER_ENABLED_RANGE
     .byte #%00000000
@@ -770,6 +935,24 @@ CharFrame0
     .byte #%00000000
     REPEND
 
+EyeFrameLeft
+    .byte #%00111100;--
+    .byte #%01111110;--
+    .byte #%01111110;--
+    .byte #%01001110;--
+    .byte #%01011110;--
+    .byte #%01001110;--
+    .byte #%01001110;--
+    .byte #%00111100;--
+
+Tile1
+    .byte #%10000001
+    .byte #%00000001 
+    .byte #%00000001
+    .byte #%00000001
+    .byte #%00000001
+    .byte #%00000001
+
     BOUNDARY $00
 CharFrame1
     REPEAT 112
@@ -794,6 +977,24 @@ CharFrame1
     REPEAT 112
     .byte #%00000000
     REPEND
+
+EyeFrameRight
+    .byte #%00111100;--
+    .byte #%01111110;--
+    .byte #%01111110;--
+    .byte #%01110010;--
+    .byte #%01111010;--
+    .byte #%01110010;--
+    .byte #%01110010;--
+    .byte #%00111100;--
+
+Tile2
+    .byte #%11111111
+    .byte #%10000000 
+    .byte #%10001000
+    .byte #%10000000
+    .byte #%10000000
+    .byte #%11111111 ; Tile 2
 
     BOUNDARY $00
 CharFrameMoveRight0
@@ -820,6 +1021,24 @@ CharFrameMoveRight0
     .byte #%00000000
     REPEND
 
+EyeFrameAttack
+    .byte #%01111100;--
+    .byte #%11111110;--
+    .byte #%11111110;--
+    .byte #%11000110;--
+    .byte #%11001110;--
+    .byte #%11000110;--
+    .byte #%11000110;--
+    .byte #%01111100;--
+
+Tile3
+    .byte #%11111111 ; Tile 3
+    .byte #%01111111
+    .byte #%00111111
+    .byte #%00011111
+    .byte #%00001111
+    .byte #%00000111
+
     BOUNDARY $00
 CharFrameMoveRight1
     REPEAT 112
@@ -844,6 +1063,22 @@ CharFrameMoveRight1
     REPEAT 112
     .byte #%00000000
     REPEND
+
+Tile5
+    .byte #%11111110
+    .byte #%11111110 
+    .byte #%11111110
+    .byte #%11111110
+    .byte #%11111110
+    .byte #%11111110 ; Tile 5
+
+Tile6
+    .byte #%00000000
+    .byte #%00000000 
+    .byte #%00000000
+    .byte #%00000000
+    .byte #%00000000
+    .byte #%00000000 ; Tile 6
 
     BOUNDARY $00
 CharFrameMoveLeft0
@@ -895,63 +1130,106 @@ CharFrameMoveLeft1
     .byte #%00000000
     REPEND
 
-    BOUNDARY $00
-Tiles
-Tile1
-    .byte #%10000001
-    .byte #%00000001 
-    .byte #%00000001
-    .byte #%00000001
-    .byte #%00000001
-    .byte #%00000001
+;; Numbers
+Number0
+    .byte #%01111110
+    .byte #%01011010 
+    .byte #%01011010
+    .byte #%01011010
+    .byte #%01011010
+    .byte #%01011010
+    .byte #%01011010
+    .byte #%01111110
 
-Tile2
-    .byte #%11111111
-    .byte #%10000000 
-    .byte #%10001000
-    .byte #%10000000
-    .byte #%10000000
-    .byte #%11111111 ; Tile 2
+Number1
+    .byte #%00101000
+    .byte #%01101100 
+    .byte #%01101100 
+    .byte #%00101000
+    .byte #%00101000
+    .byte #%00101000
+    .byte #%00101000
+    .byte #%00101000
 
-Tile3
-    .byte #%11111111 ; Tile 3
-    .byte #%01111111
-    .byte #%00111111
-    .byte #%00011111
-    .byte #%00001111
-    .byte #%00000111
+Number2
+    .byte #%01111110
+    .byte #%00011000
+    .byte #%00011000
+    .byte #%00011000
+    .byte #%01111110
+    .byte #%01000010
+    .byte #%01000010
+    .byte #%01111110
 
-Tile3B
-    .byte #%11111111 ; Tile 3B
-    .byte #%11111110
-    .byte #%11111100
-    .byte #%11111000
-    .byte #%11110000
-    .byte #%11100000
+Number3
+    .byte #%01111110
+    .byte #%00011000 
+    .byte #%00011000 
+    .byte #%01111110
+    .byte #%01111110
+    .byte #%00011000
+    .byte #%00011000
+    .byte #%01111110
 
-Tile4
-    .byte #%11111111
-    .byte #%11111111 
-    .byte #%00000000
-    .byte #%00000000
-    .byte #%00000000
-    .byte #%00000000 ; Tile 4
+Number4
+    .byte #%01000010
+    .byte #%01000010 
+    .byte #%01000010
+    .byte #%01111110
+    .byte #%00011000
+    .byte #%00011000
+    .byte #%00011000
+    .byte #%00011000
 
-Tile5
-    .byte #%11111111
-    .byte #%11111111 
-    .byte #%11111111
-    .byte #%11111111
-    .byte #%11111111
-    .byte #%11111111 ; Tile 5
+Number5
+    .byte #%01111110
+    .byte #%01000010 
+    .byte #%01000010
+    .byte #%01111110
+    .byte #%01111110
+    .byte #%00011000
+    .byte #%00011000
+    .byte #%01111110
 
-Tile6
-    .byte #%00000000
-    .byte #%00000000 
-    .byte #%00000000
-    .byte #%00000000
-    .byte #%00000000
-    .byte #%00000000 ; Tile 6
+Number6
+    .byte #%01111110
+    .byte #%01000010 
+    .byte #%01000010 
+    .byte #%01000010
+    .byte #%01111110
+    .byte #%01011010
+    .byte #%01011010
+    .byte #%01111110
+
+Number7
+    .byte #%01111110
+    .byte #%00011000 
+    .byte #%00011000
+    .byte #%00011000
+    .byte #%00100100
+    .byte #%00100100
+    .byte #%00100100
+    .byte #%00100100
+
+Number8
+    .byte #%01111110
+    .byte #%01011010 
+    .byte #%01011010
+    .byte #%01111110
+    .byte #%01111110
+    .byte #%01011010
+    .byte #%01011010
+    .byte #%01111110
+
+Number9
+    .byte #%01111110
+    .byte #%01011010 
+    .byte #%01011010
+    .byte #%01111110
+    .byte #%01111110
+    .byte #%00011000
+    .byte #%00011000
+    .byte #%01111110
 
 TileDivideTable
 .TileDivideTableY SET 0
@@ -962,7 +1240,6 @@ TileDivideTable
 .TileDivideTableY SET .TileDivideTableY + 1
     REPEND
 
-    ORG $FE00
 fineAdjustBegin
     DC.B %01110000 ; Left 7
     DC.B %01100000 ; Left 6
