@@ -13,13 +13,15 @@ PLAYER_ANIM_SPEED           = 32
 PLAYER_COLOR                = $2a
 EYE_COLOR                   = $0e
 LASER_COLOR                 = $48
-PLAYER_START_Y              = 13
+PLAYER_START_Y              = 8
 
 LASER_ENABLED_RANGE         = 4 ; n frames before we enable the laser
 LASER_ENABLED_SPEED         = 12
 LASER_STEPS                 = 6
 
 EYE_START_X                 = 120
+
+COLLISION_INVERT_DURATION   = 3
 
     SEG.U vars
     ORG $80
@@ -47,6 +49,7 @@ COLLISION_Y            ds 1
 
 COLLISION_TILE_X       ds 1
 COLLISION_TILE_Y       ds 1
+COLLISION_TIMER        ds 1
 
 RANDOM                 ds 1
 PLAYFIELD              ds PLAYFIELD_WIDTH * PLAYFIELD_HEIGHT * 2
@@ -81,6 +84,9 @@ Reset
 
     lda #0
     sta LASER_TIMER
+
+    lda #0
+    sta COLLISION_TIMER
 
     lda #40
     sta KEY_X
@@ -161,12 +167,11 @@ TILE_Y SET 0
         lda #%00000000
         sta PF0
     ELSE
-        ; lda #%11000000
         lda SIDE_DECORATION ; some graphics stuff, looks like playstation 3D!!!
         sta PF0
     ENDIF ; Build entrance and exit
 
-    ldx #TILE_HEIGHT * 4 - 1
+    ldx #TILE_HEIGHT * 4
 .GameKernelLine
         sta WSYNC
 
@@ -194,20 +199,13 @@ TILE_Y SET 0
 
         IF TILE_Y = 0 ; Draw the key
             iny
-            nop
             sty ENAM1
         ELSE
-            lda #0
-            sta ENAM1
+            inc SIDE_DECORATION
         ENDIF
 
         dex
         bne .GameKernelLine
-    lda #0
-    sta PF1
-    sta PF2
-    dec SIDE_DECORATION
-    sta WSYNC
 TILE_Y SET TILE_Y + 1
     REPEND
 
@@ -357,8 +355,14 @@ VBlankHandlePlayer
     SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveRight1
 .NotMoveRightFrame1
 
-    inc PLAYER_X
-    inc PLAYER_X
+    lda COLLISION_TIMER
+    bne .InvertMoveRight
+        inc PLAYER_X
+        inc PLAYER_X
+        jmp DoneMoveRight
+.InvertMoveRight
+        dec PLAYER_X
+        dec PLAYER_X
 DoneMoveRight
 
 	lda #%01000000
@@ -378,29 +382,52 @@ DoneMoveRight
     SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveLeft1
 .NotMoveLeftFrame1
 
-    dec PLAYER_X
-    dec PLAYER_X
+    lda COLLISION_TIMER
+    bne .InvertMoveLeft
+        dec PLAYER_X
+        dec PLAYER_X
+        jmp DoneMoveLeft
+.InvertMoveLeft
+        inc PLAYER_X
+        inc PLAYER_X
+
 DoneMoveLeft
 
 	lda #%00100000
 	bit SWCHA
 	bne DoneMoveDown
 
-    ; dec PLAYER_Y
+    lda COLLISION_TIMER
+    bne .InvertMoveDown
+        dec PLAYER_Y
+        dec PLAYER_Y
+        jmp DoneMoveDown
+.InvertMoveDown
+    inc PLAYER_Y
+    inc PLAYER_Y
 DoneMoveDown
 
 	lda #%00010000
 	bit SWCHA
 	bne DoneMoveUp
 
-    inc PLAYER_Y
+    lda COLLISION_TIMER
+    bne .InvertMoveUp
+        inc PLAYER_Y
+        inc PLAYER_Y
+        jmp DoneMoveUp
+.InvertMoveUp
+    dec PLAYER_Y
+    dec PLAYER_Y
 DoneMoveUp
 
-	lda #%00010000
-	bit SWCHA
-	beq NoGravity
+	; lda #%00010000
+	; bit SWCHA
+	; beq NoGravity
 
-    dec PLAYER_Y ; gravity
+    ; lda COLLISION_TIMER
+    ; bne NoGravity
+    ; dec PLAYER_Y ; gravity
 
 NoGravity
     lda PLAYER_Y
@@ -425,6 +452,9 @@ NoGravity
     bpl .NoPlayfieldPlayerCollision
 
      ; we got a collision, roll back to the previous position
+    lda #COLLISION_INVERT_DURATION
+    sta COLLISION_TIMER ; invert the control to give a feeling of "bounce"
+    
     lda PREVIOUS_PLAYER_X
     sta PLAYER_X
     lda PREVIOUS_PLAYER_Y
@@ -840,9 +870,16 @@ UpdateGameKernelTimers
 
 .DontResetGame
 .DoneWithLostTimer
+
+    lda COLLISION_TIMER
+    beq .DoneWithCollisionTimer
+    dec COLLISION_TIMER
+
+.DoneWithCollisionTimer
     rts
 
 EnableLaser
+    rts
     lda LASER_TIMER
     bne .LaserAlreadyEnabled
     lda #%00000001
