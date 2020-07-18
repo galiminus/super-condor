@@ -67,7 +67,7 @@ PLAYER_MOVED           ds 1
 
 Reset
     CLEAN_START
-    lda #3
+    lda #0
     sta LEVEL_INDEX
 
     SET_POINTER TIMER_DIGITS + 0, Number0
@@ -544,6 +544,22 @@ DoneMoveDown
     inc PLAYER_Y
     inc PLAYER_Y
 DoneMoveUp
+    lda PLAYER_X
+    sec
+    cmp #12
+    bmi .NotAboveLava
+
+    sec
+    cmp #152
+    bpl .NotAboveLava
+
+    lda PLAYER_Y
+    sec
+    cmp #0
+    bne .PlayerStillAboveFloor
+    jsr EnableLostRound
+
+.NotAboveLava
     lda PLAYER_Y
     sec
     cmp #PLAYER_START_Y
@@ -763,8 +779,9 @@ VBlankHandleEye
     rts
 
 DrawFloor
-    lda #%11111111
+    lda #%11110000
     sta PF0
+    lda #%00000000
     sta PF1
     sta PF2
     sta WSYNC
@@ -986,7 +1003,6 @@ UpdateGameKernelTimers
     rts
 
 EnableLaser
-    ; rts
     lda LASER_TIMER
     bne .LaserAlreadyEnabled
     lda #%00000001
@@ -1565,11 +1581,6 @@ Level1Tiles
     .word Tile6
 
     .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-
-    .word Tile6
     .word Tile2
     .word Tile5
     .word Tile6
@@ -1577,6 +1588,11 @@ Level1Tiles
     .word Tile6
     .word Tile1
     .word Tile1
+    .word Tile6
+
+    .word Tile6
+    .word Tile7
+    .word Tile7
     .word Tile6
 
 Level4
