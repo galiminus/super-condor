@@ -53,7 +53,7 @@ RANDOM                 ds 1
 PLAYFIELD              ds PLAYFIELD_WIDTH * PLAYFIELD_HEIGHT * 2
 
 TIMER_FRAME_COUNT      ds 1
-TIMER_DIGITS           ds 8
+TIMER_DIGITS           ds 6
 TIMER_DIGITS_BUFFER    ds 1
 TIMER                  ds 2
 TIMER_DIGIT_DEC        ds 4
@@ -77,7 +77,6 @@ Reset
     SET_POINTER TIMER_DIGITS + 0, Number0
     SET_POINTER TIMER_DIGITS + 2, Number0
     SET_POINTER TIMER_DIGITS + 4, Number0
-    SET_POINTER TIMER_DIGITS + 6, Number0
 
 ResetLevel
     lda #0
@@ -115,7 +114,6 @@ NextFrame
     VERTICAL_SYNC
 
     lda LEVEL_INDEX
-    cmp #0
     bne .NotHomeScreen
     jsr HomeScreen
     jmp .DoneScreen
@@ -124,18 +122,23 @@ NextFrame
     jsr GameKernel
 
 .DoneScreen
+    lda LEVEL_INDEX
+    beq Reset
+
     lda MUST_RESET_LEVEL
     bne ResetLevel
     jmp NextFrame
 
 HomeScreen
     TIMER_SETUP 37
+    lda #0
+    sta VBLANK
     TIMER_WAIT
-
-    TIMER_SETUP 192
 
     lda #PLAYER_COLOR
     sta COLUPF
+
+    TIMER_SETUP 192
 
     lda #%00000000
     sta PF0
@@ -148,7 +151,7 @@ HomeScreen
     dey
     bne .HomeScreenLineTop
 
-    ldy #5
+    ldy #0
 .TitleSuperLine
     ldx #4
 .TitleSuperSubLine
@@ -160,7 +163,7 @@ HomeScreen
     lda TitlePF2Super1,y
     sta PF2
 
-    SLEEP 5
+    SLEEP 10
 
     lda TitlePF0Super2,y
     sta PF0
@@ -175,7 +178,8 @@ HomeScreen
     dex
     bne .TitleSuperSubLine
 
-    dey
+    iny
+    cpy #5
     bne .TitleSuperLine
 
     lda #%00000000
@@ -188,7 +192,7 @@ HomeScreen
     sta WSYNC
     sta WSYNC
 
-    ldy #5
+    ldy #0
 .TitleCondorLine
     ldx #4
 .TitleCondorSubLine
@@ -215,7 +219,8 @@ HomeScreen
     dex
     bne .TitleCondorSubLine
 
-    dey
+    iny
+    cpy #5
     bne .TitleCondorLine
 
     lda #%00000000
@@ -404,29 +409,23 @@ VBlankHandleTimer
     cmp #10
     bne .DoneUpdateTimerDigits
 
-    lda #0
-    sta TIMER_DIGIT_DEC + 2
-    inc TIMER_DIGIT_DEC + 3
-    lda TIMER_DIGIT_DEC + 3
-    cmp #10
-    bne .DoneUpdateTimerDigits
-
 .DoneUpdateTimerDigits
 
-; TIMER_DIGIT_DEC_INDEX SET 0
-;     REPEAT 4
-; TIMER_DIGIT_VALUE SET 0
-;     REPEAT 10
-;         SUBROUTINE
-;         lda TIMER_DIGIT_DEC + TIMER_DIGIT_DEC_INDEX
-;         cmp #TIMER_DIGIT_VALUE
-;         bne .NextDigit
-;         SET_POINTER TIMER_DIGITS + TIMER_DIGIT_DEC_INDEX * 2, Number0 + TIMER_DIGIT_VALUE * 8
-; .NextDigit
-; TIMER_DIGIT_VALUE SET TIMER_DIGIT_VALUE + 1
-;     REPEND
-; TIMER_DIGIT_DEC_INDEX SET TIMER_DIGIT_DEC_INDEX + 1
-;     REPEND
+TIMER_DIGIT_DEC_INDEX SET 0
+    REPEAT 3
+TIMER_DIGIT_VALUE SET 0
+    ldx #0
+    REPEAT 10
+        SUBROUTINE
+        lda TIMER_DIGIT_DEC + TIMER_DIGIT_DEC_INDEX
+        cmp #TIMER_DIGIT_VALUE
+        bne .NextDigit
+        SET_POINTER TIMER_DIGITS + TIMER_DIGIT_DEC_INDEX * 2, Number0 + TIMER_DIGIT_VALUE * 5
+.NextDigit
+TIMER_DIGIT_VALUE SET TIMER_DIGIT_VALUE + 1
+    REPEND
+TIMER_DIGIT_DEC_INDEX SET TIMER_DIGIT_DEC_INDEX + 1
+    REPEND
 
     rts
 
@@ -567,13 +566,14 @@ DoneMoveDown
     dec PLAYER_Y
 DoneMoveUp
 
-	; lda #%00010000
-	; bit SWCHA
-	; beq NoGravity
+	lda #%00010000
+	bit SWCHA
+	beq NoGravity
 
-    ; lda COLLISION_TIMER
-    ; bne NoGravity
-    ; dec PLAYER_Y ; gravity
+    lda COLLISION_TIMER
+    bne NoGravity
+    dec PLAYER_Y ; gravity
+    dec PLAYER_Y ; gravity
 
 NoGravity
     lda PLAYER_Y
@@ -832,7 +832,7 @@ DrawLava
     sta COLUBK    
 
 .DontDrawLava
-    REPEAT 4
+    REPEAT 3
     jsr UpdateRandom
     lda RANDOM
     sta PF0
@@ -845,7 +845,7 @@ DrawLava
     lda RANDOM
     sta PF2
 
-        REPEAT 3
+        REPEAT 6
             sta WSYNC
         REPEND
     REPEND
@@ -907,7 +907,7 @@ DrawTimer
     sta PF2
 
     iny
-    cpy #8
+    cpy #5
     bne .TimerLine
 
     lda #0
@@ -1080,30 +1080,6 @@ SetLevel
     SET_POINTER LEVEL, Level5
     SET_POINTER LEVEL_TILES, Level5Tiles    
 .Not5
-    lda LEVEL_INDEX
-    cmp #6
-    bne .Not6
-    SET_POINTER LEVEL, Level6
-    SET_POINTER LEVEL_TILES, Level6Tiles    
-.Not6
-    lda LEVEL_INDEX
-    cmp #7
-    bne .Not7
-    SET_POINTER LEVEL, Level7
-    SET_POINTER LEVEL_TILES, Level7Tiles    
-.Not7
-    lda LEVEL_INDEX
-    cmp #8
-    bne .Not8
-    SET_POINTER LEVEL, Level8
-    SET_POINTER LEVEL_TILES, Level8Tiles    
-.Not8
-    lda LEVEL_INDEX
-    cmp #9
-    bne .Not9
-    SET_POINTER LEVEL, Level9    
-    SET_POINTER LEVEL_TILES, Level9Tiles    
-.Not9
 
     rts
 
@@ -1142,13 +1118,53 @@ LaserFrames
     .byte #%00000000
     REPEND
 
+TitlePF0Super2
+   .byte #%10111101
+   .byte #%10100101
+   .byte #%10111101
+   .byte #%10000001
+   .byte #%10000001
 
-Level9
+TitlePF1Super2
+   .byte #%11011100
+   .byte #%00010100
+   .byte #%11011100
+   .byte #%00011000
+   .byte #%11010100
+
+TitlePF1Condor1
+   .byte #%00000111
+   .byte #%00000100
+   .byte #%00000100
+   .byte #%00000100
+   .byte #%00000111
+
+TitlePF2Condor1
+   .byte #%10101110
+   .byte #%11101010
+   .byte #%11101010
+   .byte #%11101010
+   .byte #%10101110
+
+TitlePF0Condor2
+   .byte #%11100000
+   .byte #%11000000
+   .byte #%11000000
+   .byte #%11000000
+   .byte #%11100000
+
+TitlePF1Condor2
+   .byte #%01110111
+   .byte #%01010101
+   .byte #%01010111
+   .byte #%01010110
+   .byte #%01110101
+
+Level5
     .byte #187 ; decoration
     .byte #$02  ; background color
     .byte #$a3  ; playfield color
-    .byte #$a1  ; lava color
-Level9Tiles
+Level5Tiles
     .word Tile6
     .word Tile6
     .word Tile6
@@ -1366,19 +1382,18 @@ CharFrameMoveLeft0
     REPEND
 
 TitlePF1Super1
+   .byte #%00000001
+   .byte #%00000001
+   .byte #%00000001
    .byte #%00000000
    .byte #%00000001
-   .byte #%00000000
-   .byte #%00000001
-   .byte #%00000001
-   .byte #%00000001
+
 TitlePF2Super1
-   .byte #%00000000
-   .byte #%10111011
-   .byte #%10101010
    .byte #%10101011
    .byte #%10101000
    .byte #%10101011
+   .byte #%10101010
+   .byte #%10111011
 
     BOUNDARY $00
 CharFrameMoveLeft1
@@ -1401,7 +1416,7 @@ CharFrameMoveLeft1
         .byte #%00111100;--
         .byte #%00000000;--
         .byte #%00000000;--
-    REPEAT SPRITE_PADDING
+    REPEAT SPRITE_PADDING - 1
     .byte #%00000000
     REPEND
 
@@ -1409,9 +1424,6 @@ CharFrameMoveLeft1
 Number0
     .byte #%01111110
     .byte #%01011010 
-    .byte #%01011010
-    .byte #%01011010
-    .byte #%01011010
     .byte #%01011010
     .byte #%01011010
     .byte #%01111110
@@ -1422,57 +1434,39 @@ Number1
     .byte #%01101100 
     .byte #%00101000
     .byte #%00101000
-    .byte #%00101000
-    .byte #%00101000
-    .byte #%00101000
 
 Number2
     .byte #%01111110
     .byte #%00011000
-    .byte #%00011000
-    .byte #%00011000
     .byte #%01111110
-    .byte #%01000010
     .byte #%01000010
     .byte #%01111110
 
 Number3
     .byte #%01111110
     .byte #%00011000 
-    .byte #%00011000 
     .byte #%01111110
-    .byte #%01111110
-    .byte #%00011000
     .byte #%00011000
     .byte #%01111110
 
 Number4
     .byte #%01000010
-    .byte #%01000010 
     .byte #%01000010
     .byte #%01111110
-    .byte #%00011000
-    .byte #%00011000
     .byte #%00011000
     .byte #%00011000
 
 Number5
     .byte #%01111110
     .byte #%01000010 
-    .byte #%01000010
     .byte #%01111110
-    .byte #%01111110
-    .byte #%00011000
     .byte #%00011000
     .byte #%01111110
 
 Number6
     .byte #%01111110
     .byte #%01000010 
-    .byte #%01000010 
-    .byte #%01000010
     .byte #%01111110
-    .byte #%01011010
     .byte #%01011010
     .byte #%01111110
 
@@ -1480,82 +1474,27 @@ Number7
     .byte #%01111110
     .byte #%00011000 
     .byte #%00011000
-    .byte #%00011000
-    .byte #%00100100
-    .byte #%00100100
     .byte #%00100100
     .byte #%00100100
 
 Number8
     .byte #%01111110
     .byte #%01011010 
-    .byte #%01011010
     .byte #%01111110
-    .byte #%01111110
-    .byte #%01011010
     .byte #%01011010
     .byte #%01111110
 
 Number9
     .byte #%01111110
     .byte #%01011010 
-    .byte #%01011010
-    .byte #%01111110
     .byte #%01111110
     .byte #%00011000
-    .byte #%00011000
     .byte #%01111110
-
-TitlePF0Super2
-   .byte #%00000000
-   .byte #%10000001
-   .byte #%10000001
-   .byte #%10111101
-   .byte #%10100101
-   .byte #%10111101
-TitlePF1Super2
-   .byte #%00000000
-   .byte #%11010100
-   .byte #%00011000
-   .byte #%11011100
-   .byte #%00010100
-   .byte #%11011100
-
-TitlePF1Condor1
-   .byte #%00000000
-   .byte #%00000111
-   .byte #%00000100
-   .byte #%00000100
-   .byte #%00000100
-   .byte #%00000111
-TitlePF2Condor1
-   .byte #%00000000
-   .byte #%10101110
-   .byte #%11101010
-   .byte #%11101010
-   .byte #%11101010
-   .byte #%10101110
-
-TitlePF0Condor2
-   .byte #%00000000
-   .byte #%11100000
-   .byte #%11000000
-   .byte #%11000000
-   .byte #%11000000
-   .byte #%11100000
-TitlePF1Condor2
-   .byte #%00000000
-   .byte #%01110101
-   .byte #%01010110
-   .byte #%01010111
-   .byte #%01010101
-   .byte #%01110111
 
 Level1
     .byte #192 ; decoration
     .byte #$01  ; background color
     .byte #$02  ; playfield color
-    .byte #$02  ; lava color
 Level1Tiles
     .word Tile6
     .word Tile6
@@ -1582,7 +1521,6 @@ Level2
     .byte #187 ; decoration
     .byte #$02  ; background color
     .byte #$a3  ; playfield color
-    .byte #$a1  ; lava color
 Level2Tiles
     .word Tile6
     .word Tile6
@@ -1609,7 +1547,6 @@ Level3
     .byte #187 ; decoration
     .byte #$02  ; background color
     .byte #$a3  ; playfield color
-    .byte #$a1  ; lava color
 Level3Tiles
     .word Tile6
     .word Tile6
@@ -1636,116 +1573,7 @@ Level4
     .byte #187 ; decoration
     .byte #$02  ; background color
     .byte #$a3  ; playfield color
-    .byte #$a1  ; lava color
 Level4Tiles
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile5
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-
-Level5
-    .byte #187 ; decoration
-    .byte #$02  ; background color
-    .byte #$a3  ; playfield color
-    .byte #$a1  ; lava color
-Level5Tiles
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile5
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-
-Level6
-    .byte #187 ; decoration
-    .byte #$02  ; background color
-    .byte #$a3  ; playfield color
-    .byte #$a1  ; lava color
-Level6Tiles
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile5
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-
-Level7
-    .byte #187 ; decoration
-    .byte #$02  ; background color
-    .byte #$a3  ; playfield color
-    .byte #$a1  ; lava color
-Level7Tiles
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile5
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-
-Level8
-    .byte #187 ; decoration
-    .byte #$02  ; background color
-    .byte #$a3  ; playfield color
-    .byte #$a1  ; lava color
-Level8Tiles
     .word Tile6
     .word Tile6
     .word Tile6
