@@ -24,6 +24,8 @@ LEVEL_METADATA_SIZE         = 4
 
 SPRITE_PADDING              = PLAYFIELD_HEIGHT * TILE_HEIGHT * 4 - 8
 
+LEVEL_COUNT                 = 3
+
     SEG.U vars
     ORG $80
 
@@ -69,7 +71,7 @@ MUST_RESET_LEVEL       ds 1
 
 Reset
     CLEAN_START
-    lda #1
+    lda #0
     sta LEVEL_INDEX
 
     SET_POINTER TIMER_DIGITS + 0, Number0
@@ -113,11 +115,12 @@ NextFrame
     VERTICAL_SYNC
 
     lda LEVEL_INDEX
-    bne .GameScreen
+    cmp #0
+    bne .NotHomeScreen
     jsr HomeScreen
     jmp .DoneScreen
 
-.GameScreen
+.NotHomeScreen
     jsr GameKernel
 
 .DoneScreen
@@ -126,6 +129,9 @@ NextFrame
     jmp NextFrame
 
 HomeScreen
+    TIMER_SETUP 37
+    TIMER_WAIT
+
     TIMER_SETUP 192
 
     lda #PLAYER_COLOR
@@ -136,7 +142,7 @@ HomeScreen
     sta PF1
     sta PF2
 
-    ldy #92
+    ldy #75
 .HomeScreenLineTop
     sta WSYNC
     dey
@@ -218,15 +224,18 @@ HomeScreen
     sta PF2
     sta WSYNC
 
-    TIMER_WAIT
+	bit INPT4
+    bmi .DoneTitle
 
-	lda #%10000000
-	bit SWCHA
-    bne .DoneTitle
-
-    inc LEVEL_INDEX
+    lda #1
+    sta LEVEL_INDEX
     lda #1
     sta MUST_RESET_LEVEL
+
+    TIMER_WAIT
+
+    TIMER_SETUP 30
+    TIMER_WAIT
 
 .DoneTitle
     rts
@@ -404,20 +413,20 @@ VBlankHandleTimer
 
 .DoneUpdateTimerDigits
 
-TIMER_DIGIT_DEC_INDEX SET 0
-    REPEAT 4
-TIMER_DIGIT_VALUE SET 0
-    REPEAT 10
-        SUBROUTINE
-        lda TIMER_DIGIT_DEC + TIMER_DIGIT_DEC_INDEX
-        cmp #TIMER_DIGIT_VALUE
-        bne .NextDigit
-        SET_POINTER TIMER_DIGITS + TIMER_DIGIT_DEC_INDEX * 2, Number0 + TIMER_DIGIT_VALUE * 8
-.NextDigit
-TIMER_DIGIT_VALUE SET TIMER_DIGIT_VALUE + 1
-    REPEND
-TIMER_DIGIT_DEC_INDEX SET TIMER_DIGIT_DEC_INDEX + 1
-    REPEND
+; TIMER_DIGIT_DEC_INDEX SET 0
+;     REPEAT 4
+; TIMER_DIGIT_VALUE SET 0
+;     REPEAT 10
+;         SUBROUTINE
+;         lda TIMER_DIGIT_DEC + TIMER_DIGIT_DEC_INDEX
+;         cmp #TIMER_DIGIT_VALUE
+;         bne .NextDigit
+;         SET_POINTER TIMER_DIGITS + TIMER_DIGIT_DEC_INDEX * 2, Number0 + TIMER_DIGIT_VALUE * 8
+; .NextDigit
+; TIMER_DIGIT_VALUE SET TIMER_DIGIT_VALUE + 1
+;     REPEND
+; TIMER_DIGIT_DEC_INDEX SET TIMER_DIGIT_DEC_INDEX + 1
+;     REPEND
 
     rts
 
@@ -468,10 +477,18 @@ VBlankHandlePlayer
     lda PLAYER_X
     cmp #158
     bne .NotNextLevel
+
     inc LEVEL_INDEX
+    lda LEVEL_INDEX
+    cmp LEVEL_COUNT
+    bne .NotTheEnd
+    lda #0
+    sta LEVEL_INDEX
+
+.NotTheEnd
     lda #1
     sta MUST_RESET_LEVEL
-    jmp .DonePlayfieldPlayerCollision
+    rts
 
 .NotNextLevel
     lda PLAYER_ANIM_CTR
@@ -1033,16 +1050,61 @@ EnableLostRound
     rts
 
 SetLevel
+    lda LEVEL_INDEX
     cmp #1
-    bne .NotOne
+    bne .Not1
     SET_POINTER LEVEL, Level1    
     SET_POINTER LEVEL_TILES, Level1Tiles  
-.NotOne
+.Not1
+    lda LEVEL_INDEX
     cmp #2
-    bne .NotTwo
+    bne .Not2
     SET_POINTER LEVEL, Level2    
     SET_POINTER LEVEL_TILES, Level2Tiles    
-.NotTwo
+.Not2
+    lda LEVEL_INDEX
+    cmp #3
+    bne .Not3
+    SET_POINTER LEVEL, Level3    
+    SET_POINTER LEVEL_TILES, Level3Tiles    
+.Not3
+    lda LEVEL_INDEX
+    cmp #4
+    bne .Not4
+    SET_POINTER LEVEL, Level4    
+    SET_POINTER LEVEL_TILES, Level4Tiles    
+.Not4
+    lda LEVEL_INDEX
+    cmp #5
+    bne .Not5
+    SET_POINTER LEVEL, Level5
+    SET_POINTER LEVEL_TILES, Level5Tiles    
+.Not5
+    lda LEVEL_INDEX
+    cmp #6
+    bne .Not6
+    SET_POINTER LEVEL, Level6
+    SET_POINTER LEVEL_TILES, Level6Tiles    
+.Not6
+    lda LEVEL_INDEX
+    cmp #7
+    bne .Not7
+    SET_POINTER LEVEL, Level7
+    SET_POINTER LEVEL_TILES, Level7Tiles    
+.Not7
+    lda LEVEL_INDEX
+    cmp #8
+    bne .Not8
+    SET_POINTER LEVEL, Level8
+    SET_POINTER LEVEL_TILES, Level8Tiles    
+.Not8
+    lda LEVEL_INDEX
+    cmp #9
+    bne .Not9
+    SET_POINTER LEVEL, Level9    
+    SET_POINTER LEVEL_TILES, Level9Tiles    
+.Not9
+
     rts
 
 FineAdjustSprite
@@ -1079,6 +1141,34 @@ LaserFrames
     REPEAT LASER_ENABLED_SPEED
     .byte #%00000000
     REPEND
+
+
+Level9
+    .byte #187 ; decoration
+    .byte #$02  ; background color
+    .byte #$a3  ; playfield color
+    .byte #$a1  ; lava color
+Level9Tiles
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile5
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
 
     BOUNDARY $00
 CharFrame0
@@ -1494,6 +1584,168 @@ Level2
     .byte #$a3  ; playfield color
     .byte #$a1  ; lava color
 Level2Tiles
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile5
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+
+Level3
+    .byte #187 ; decoration
+    .byte #$02  ; background color
+    .byte #$a3  ; playfield color
+    .byte #$a1  ; lava color
+Level3Tiles
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile5
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+
+Level4
+    .byte #187 ; decoration
+    .byte #$02  ; background color
+    .byte #$a3  ; playfield color
+    .byte #$a1  ; lava color
+Level4Tiles
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile5
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+
+Level5
+    .byte #187 ; decoration
+    .byte #$02  ; background color
+    .byte #$a3  ; playfield color
+    .byte #$a1  ; lava color
+Level5Tiles
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile5
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+
+Level6
+    .byte #187 ; decoration
+    .byte #$02  ; background color
+    .byte #$a3  ; playfield color
+    .byte #$a1  ; lava color
+Level6Tiles
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile5
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+
+Level7
+    .byte #187 ; decoration
+    .byte #$02  ; background color
+    .byte #$a3  ; playfield color
+    .byte #$a1  ; lava color
+Level7Tiles
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile5
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+
+Level8
+    .byte #187 ; decoration
+    .byte #$02  ; background color
+    .byte #$a3  ; playfield color
+    .byte #$a1  ; lava color
+Level8Tiles
     .word Tile6
     .word Tile6
     .word Tile6
