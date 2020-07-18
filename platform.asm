@@ -10,7 +10,7 @@ PLAYER_ANIM_SPEED           = 32
 PLAYER_COLOR                = $2a
 EYE_COLOR                   = $0e
 LASER_COLOR                 = $48
-PLAYER_START_Y              = 8
+PLAYER_START_Y              = 3
 
 LASER_ENABLED_RANGE         = 4 ; n frames before we enable the laser
 LASER_ENABLED_SPEED         = 6
@@ -18,13 +18,11 @@ LASER_STEPS                 = 6
 
 EYE_START_X                 = 120
 
-COLLISION_INVERT_DURATION   = 3
-
 LEVEL_METADATA_SIZE         = 4
 
-SPRITE_PADDING              = PLAYFIELD_HEIGHT * TILE_HEIGHT * 4 - 8
+SPRITE_PADDING              = PLAYFIELD_HEIGHT * TILE_HEIGHT * 4 - 8 - 5
 
-LEVEL_COUNT                 = 3
+LEVEL_COUNT                 = 6
 
     SEG.U vars
     ORG $80
@@ -41,13 +39,10 @@ PLAYER_CHAR_FRAME      ds 2
 PLAYER_VEC_Y           ds 1
 PLAYER_VEC_X           ds 1
 EYE_X                  ds 1
-KEY_X                  ds 1
 CURRENT_EYE_FRAME      ds 2
 LASER_TIMER            ds 1
 LOST_TIMER             ds 1
 IS_KEY_COLLECTED       ds 1
-
-COLLISION_TIMER        ds 1
 
 RANDOM                 ds 1
 PLAYFIELD              ds PLAYFIELD_WIDTH * PLAYFIELD_HEIGHT * 2
@@ -65,13 +60,14 @@ LEVEL                  ds 2
 LEVEL_TILES            ds 2
 
 MUST_RESET_LEVEL       ds 1
+PLAYER_MOVED           ds 1
 
     SEG
     ORG $F000
 
 Reset
     CLEAN_START
-    lda #0
+    lda #3
     sta LEVEL_INDEX
 
     SET_POINTER TIMER_DIGITS + 0, Number0
@@ -100,12 +96,6 @@ ResetLevel
 
     lda #0
     sta LASER_TIMER
-
-    lda #0
-    sta COLLISION_TIMER
-
-    lda #40
-    sta KEY_X
 
     lda #0
     sta IS_KEY_COLLECTED
@@ -292,7 +282,8 @@ GameKernel
 
     jsr DrawWall
 
-    lda #192
+    ldy #0
+    lda (LEVEL),y
     sta SIDE_DECORATION
 
     sta WSYNC
@@ -305,7 +296,7 @@ TILE_Y SET 0
         lda #%00000000
         sta PF0
     ELSE
-        lda SIDE_DECORATION ; some graphics stuff, looks like playstation 3D!!!
+        lda SIDE_DECORATION ; some graphics stuff to add variation
         sta PF0
     ENDIF ; Build entrance and exit
 
@@ -500,14 +491,11 @@ VBlankHandlePlayer
     SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveRight1
 .NotMoveRightFrame1
 
-    lda COLLISION_TIMER
-    bne .InvertMoveRight
-        inc PLAYER_X
-        inc PLAYER_X
-        jmp DoneMoveRight
-.InvertMoveRight
-        dec PLAYER_X
-        dec PLAYER_X
+    lda #1
+    sta PLAYER_MOVED
+
+    inc PLAYER_X
+    inc PLAYER_X
 DoneMoveRight
 
 	lda #%01000000
@@ -527,14 +515,11 @@ DoneMoveRight
     SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveLeft1
 .NotMoveLeftFrame1
 
-    lda COLLISION_TIMER
-    bne .InvertMoveLeft
-        dec PLAYER_X
-        dec PLAYER_X
-        jmp DoneMoveLeft
-.InvertMoveLeft
-        inc PLAYER_X
-        inc PLAYER_X
+    lda #1
+    sta PLAYER_MOVED
+
+    dec PLAYER_X
+    dec PLAYER_X
 
 DoneMoveLeft
 
@@ -542,48 +527,39 @@ DoneMoveLeft
 	bit SWCHA
 	bne DoneMoveDown
 
-    lda COLLISION_TIMER
-    bne .InvertMoveDown
-        dec PLAYER_Y
-        dec PLAYER_Y
-        jmp DoneMoveDown
-.InvertMoveDown
-    inc PLAYER_Y
-    inc PLAYER_Y
+    lda #1
+    sta PLAYER_MOVED
+
+    dec PLAYER_Y
+    dec PLAYER_Y
 DoneMoveDown
 
 	lda #%00010000
 	bit SWCHA
 	bne DoneMoveUp
 
-    lda COLLISION_TIMER
-    bne .InvertMoveUp
-        inc PLAYER_Y
-        inc PLAYER_Y
-        jmp DoneMoveUp
-.InvertMoveUp
-    dec PLAYER_Y
-    dec PLAYER_Y
+    lda #1
+    sta PLAYER_MOVED
+
+    inc PLAYER_Y
+    inc PLAYER_Y
 DoneMoveUp
-
-	lda #%00010000
-	bit SWCHA
-	beq NoGravity
-
-    lda COLLISION_TIMER
-    bne NoGravity
-    dec PLAYER_Y ; gravity
-    dec PLAYER_Y ; gravity
-
-NoGravity
     lda PLAYER_Y
     sec
     cmp #PLAYER_START_Y
-    bcs .PlayerStillWithinBoundaries
+    bcs .PlayerStillAboveFloor
     lda #PLAYER_START_Y
     sta PLAYER_Y
 
-.PlayerStillWithinBoundaries
+.PlayerStillAboveFloor
+    lda PLAYER_Y
+    sec
+    cmp #SPRITE_PADDING
+    bcc .PlayerStillBelowCeiling
+    lda #SPRITE_PADDING
+    sta PLAYER_Y
+
+.PlayerStillBelowCeiling
 
 .DoneWithPlayer
     lda PLAYER_ANIM_CTR
@@ -592,28 +568,6 @@ NoGravity
     sta PLAYER_ANIM_CTR
 .DontResetPlayerAnimCtr
 
-    ; check for playfield/player collision
-
-    bit CXP0FB
-    bpl .NoPlayfieldPlayerCollision
-
-     ; we got a collision, roll back to the previous position
-    lda #COLLISION_INVERT_DURATION
-    sta COLLISION_TIMER ; invert the control to give a feeling of "bounce"
-    
-    lda PREVIOUS_PLAYER_X
-    sta PLAYER_X
-    lda PREVIOUS_PLAYER_Y
-    sta PLAYER_Y
-    jmp .DonePlayfieldPlayerCollision
-
-.NoPlayfieldPlayerCollision
-    ; no collision occured, store the new position values
-    ; lda PLAYER_X
-    ; sta PREVIOUS_PLAYER_X
-    ; lda PLAYER_Y
-    ; sta PREVIOUS_PLAYER_Y
-.DonePlayfieldPlayerCollision
     lda PLAYER_Y
     sta PLAYER_Y_ADDR
 
@@ -751,7 +705,8 @@ VBlankHandleKey
     adc #4
     jmp .DoneKeyPosition
 .PutKeyInPlayfield
-    lda KEY_X
+    ldy #3
+    lda (LEVEL),y
 .DoneKeyPosition
     ldx #3
     jsr FineAdjustSprite
@@ -832,7 +787,7 @@ DrawLava
     sta COLUBK    
 
 .DontDrawLava
-    REPEAT 3
+    REPEAT 2
     jsr UpdateRandom
     lda RANDOM
     sta PF0
@@ -845,7 +800,7 @@ DrawLava
     lda RANDOM
     sta PF2
 
-        REPEAT 6
+        REPEAT 3
             sta WSYNC
         REPEND
     REPEND
@@ -929,14 +884,36 @@ GenerateGameKernelClean
     lda #%00000000
     sta ENABL
 
+
     bit CXP0FB
-    bmi .PlayfieldPlayerCollision
+    bpl .NoPlayfieldPlayerCollision
+
+    lda PREVIOUS_PLAYER_X
+    sta PLAYER_X
+    lda PREVIOUS_PLAYER_Y
+    sta PLAYER_Y
+
+    jmp .PlayfieldPlayerCollision
+
+.NoPlayfieldPlayerCollision
     lda PLAYER_X
     sta PREVIOUS_PLAYER_X
     lda PLAYER_Y
     sta PREVIOUS_PLAYER_Y
 
+    lda LOST_TIMER
+    bne .DontUseGravity
+
+    lda PLAYER_MOVED
+    bne .DontUseGravity
+
+    dec PLAYER_Y ; gravity
+
+.DontUseGravity
 .PlayfieldPlayerCollision
+    lda #0
+    sta PLAYER_MOVED
+
     rts
 
 VBlankHandleBackground
@@ -1002,20 +979,14 @@ UpdateGameKernelTimers
 
     lda #1
     sta MUST_RESET_LEVEL    
-    jmp .DoneWithCollisionTimer
 
 .DontResetGame
 .DoneWithLostTimer
 
-    lda COLLISION_TIMER
-    beq .DoneWithCollisionTimer
-    dec COLLISION_TIMER
-
-.DoneWithCollisionTimer
     rts
 
 EnableLaser
-    rts
+    ; rts
     lda LASER_TIMER
     bne .LaserAlreadyEnabled
     lda #%00000001
@@ -1036,9 +1007,11 @@ UpdateRandom
     rts
 
 EnableLostRound
-    ldy #1
-    lda (LEVEL),y
+    lda #0
     sta COLUPF
+
+    lda #0
+    sta COLUBK
 
     lda LOST_TIMER
     bne .LostTimerAlreadySet
@@ -1161,29 +1134,34 @@ TitlePF1Condor2
    .byte #%01110101
 
 Level5
-    .byte #187 ; decoration
-    .byte #$02  ; background color
-    .byte #$a3  ; playfield color
+    .byte #%11100000 ; decoration
+    .byte #$00  ; background color
+    .byte #$20  ; playfield color
+    .byte #30
 Level5Tiles
     .word Tile6
     .word Tile6
     .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
+    .word Tile8
+
     .word Tile5
+    .word Tile2
+    .word Tile5
+    .word Tile5
+
+    .word Tile7
     .word Tile6
+    .word Tile7
     .word Tile6
+
     .word Tile6
+    .word Tile8
+    .word Tile8
     .word Tile6
+
+    .word Tile3
+    .word Tile5
+    .word Tile5
     .word Tile6
 
     BOUNDARY $00
@@ -1222,12 +1200,20 @@ EyeFrameLeft
     .byte #%00111100;--
 
 Tile1
-    .byte #%10000001
-    .byte #%00000001 
-    .byte #%00000001
-    .byte #%00000001
-    .byte #%00000001
-    .byte #%00000001
+    .byte #%11111111
+    .byte #%00111100
+    .byte #%00000000
+    .byte #%00000000
+    .byte #%00000000
+    .byte #%00000000 
+
+Tile7
+    .byte #%00000000
+    .byte #%00000000
+    .byte #%00000000
+    .byte #%00111100
+    .byte #%11111111
+    .byte #%00000000
 
     BOUNDARY $00
 CharFrame1
@@ -1265,12 +1251,12 @@ EyeFrameRight
     .byte #%00111100;--
 
 Tile2
-    .byte #%11111111
-    .byte #%10000000 
-    .byte #%10001000
-    .byte #%10000000
-    .byte #%10000000
-    .byte #%11111111 ; Tile 2
+    .byte #%11000000
+    .byte #%11100000 
+    .byte #%11110000
+    .byte #%11110000
+    .byte #%11100000
+    .byte #%11000000 ; Tile 2
 
     BOUNDARY $00
 CharFrameMoveRight0
@@ -1315,6 +1301,15 @@ Tile3
     .byte #%00001111
     .byte #%00000111
 
+Tile8
+    .byte #%11111111 ; Tile 3
+    .byte #%11111110
+    .byte #%11111100
+    .byte #%11111000
+    .byte #%11110000
+    .byte #%11100000
+
+
     BOUNDARY $00
 CharFrameMoveRight1
     REPEAT SPRITE_PADDING
@@ -1341,12 +1336,12 @@ CharFrameMoveRight1
     REPEND
 
 Tile5
-    .byte #%11111110
-    .byte #%11111110 
-    .byte #%11111110
-    .byte #%11111110
-    .byte #%11111110
-    .byte #%11111110 ; Tile 5
+    .byte #%11111111
+    .byte #%11111111 
+    .byte #%11111111
+    .byte #%11111111
+    .byte #%11111111
+    .byte #%11111111 ; Tile 5
 
 Tile6
     .byte #%00000000
@@ -1491,108 +1486,128 @@ Number9
     .byte #%00011000
     .byte #%01111110
 
-Level1
+Level2
     .byte #192 ; decoration
     .byte #$01  ; background color
     .byte #$02  ; playfield color
-Level1Tiles
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile5
-    .word Tile6
-    .word Tile5
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile5
-    .word Tile6
-    .word Tile6
-    .word Tile3
-    .word Tile6
-    .word Tile6
-
-Level2
-    .byte #187 ; decoration
-    .byte #$02  ; background color
-    .byte #$a3  ; playfield color
+    .byte #40 ; key position
 Level2Tiles
     .word Tile6
     .word Tile6
     .word Tile6
     .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile5
-    .word Tile6
+
     .word Tile6
     .word Tile6
     .word Tile6
     .word Tile6
 
+    .word Tile5
+    .word Tile2
+    .word Tile5
+    .word Tile6
+
+    .word Tile6
+    .word Tile6
+    .word Tile6
+    .word Tile6
+
+    .word Tile6
+    .word Tile6
+    .word Tile3
+    .word Tile3
+
 Level3
-    .byte #187 ; decoration
-    .byte #$02  ; background color
-    .byte #$a3  ; playfield color
+    .byte #%11010000  ; decoration
+    .byte #$00  ; background color
+    .byte #$f0  ; playfield color
+    .byte #30
 Level3Tiles
     .word Tile6
     .word Tile6
     .word Tile6
     .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
-    .word Tile6
+    
     .word Tile5
+    .word Tile7
+    .word Tile7
     .word Tile6
+    
     .word Tile6
     .word Tile6
     .word Tile6
     .word Tile6
 
-Level4
+    .word Tile6
+    .word Tile6
+    .word Tile3
+    .word Tile6
+    
+    .word Tile3
+    .word Tile5
+    .word Tile5
+    .word Tile3
+
+Level1
     .byte #187 ; decoration
-    .byte #$02  ; background color
-    .byte #$a3  ; playfield color
-Level4Tiles
+    .byte #$01  ; background color
+    .byte #$f2  ; playfield color
+    .byte #70
+Level1Tiles
     .word Tile6
     .word Tile6
     .word Tile6
     .word Tile6
+
     .word Tile6
     .word Tile6
     .word Tile6
     .word Tile6
+
     .word Tile6
     .word Tile6
     .word Tile6
     .word Tile6
+
     .word Tile6
-    .word Tile6
+    .word Tile2
     .word Tile5
     .word Tile6
+
+    .word Tile6
+    .word Tile1
+    .word Tile1
+    .word Tile6
+
+Level4
+    .byte #140 ; decoration
+    .byte #$00  ; background color
+    .byte #$a3  ; playfield color
+    .byte #140
+Level4Tiles
+    .word Tile7
+    .word Tile7
+    .word Tile7
+    .word Tile6
+
+    .word Tile6
+    .word Tile8
+    .word Tile5
+    .word Tile5
+
+    .word Tile6
+    .word Tile7
     .word Tile6
     .word Tile6
+
+    .word Tile5
+    .word Tile5
+    .word Tile5
     .word Tile6
+
+    .word Tile7
+    .word Tile1
+    .word Tile7
     .word Tile6
 
 TileDivideTable
