@@ -76,6 +76,12 @@ ResetDirty
     SET_POINTER TIMER_DIGITS + 0, Number0
     SET_POINTER TIMER_DIGITS + 2, Number0
 
+    lda #0
+    sta TIMER_DIGIT_DEC + 0
+    sta TIMER_DIGIT_DEC + 1
+    sta TIMER_DIGIT_DEC + 2
+    sta TIMER_DIGIT_DEC + 3
+
 ResetLevel
     lda #0
     sta MUST_RESET_LEVEL
@@ -478,6 +484,16 @@ VBlankHandlePlayer
     lda #0
     sta LEVEL_INDEX
 
+    SET_POINTER TIMER_DIGITS + 0, Number0 ; reset timer
+    SET_POINTER TIMER_DIGITS + 2, Number0
+
+    lda #0
+    sta TIMER_DIGIT_DEC + 0
+    sta TIMER_DIGIT_DEC + 1
+    sta TIMER_DIGIT_DEC + 2
+    sta TIMER_DIGIT_DEC + 3
+
+
 .NotTheEnd
     lda #1
     sta MUST_RESET_LEVEL
@@ -793,18 +809,17 @@ DrawFloor
     lda #%11110000
     sta PF0
 
-    lda LOST_TIMER
-    beq .DrawFloor
-    rts
-.DrawFloor
-
+;     lda LOST_TIMER
+;     beq .DrawFloor
+;     rts
+; .DrawFloor
 
 LAVA_Y SET 0
-    ldy #2
-
     lda #0
     sta PF1
     sta PF2
+
+    ldy #2
 
     REPEAT 2
     lda (LEVEL),y
@@ -925,6 +940,9 @@ DrawTimer
     sta PF2
 
     sta WSYNC
+    sta WSYNC
+    sta WSYNC
+
     iny
     cpy #5
     bne .TimerLine
@@ -1460,8 +1478,8 @@ Number3
     .byte #%01111110
 
 Number4
-    .byte #%01000010
-    .byte #%01000010
+    .byte #%01011010
+    .byte #%01011010
     .byte #%01111110
     .byte #%00011000
     .byte #%00011000
