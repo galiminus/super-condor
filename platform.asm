@@ -14,7 +14,7 @@ PLAYER_START_Y              = 3
 
 LASER_ENABLED_RANGE         = 4 ; n frames before we enable the laser
 LASER_ENABLED_SPEED         = 6
-LASER_STEPS                 = 6
+LASER_STEPS                 = 5
 
 EYE_START_X                 = 120
 
@@ -23,6 +23,8 @@ LEVEL_METADATA_SIZE         = 4
 SPRITE_PADDING              = PLAYFIELD_HEIGHT * TILE_HEIGHT * 4 - 8 - 5
 
 LEVEL_COUNT                 = 6
+
+LAVA_COLOR                  = $23
 
     SEG.U vars
     ORG $80
@@ -48,7 +50,7 @@ RANDOM                 ds 1
 PLAYFIELD              ds PLAYFIELD_WIDTH * PLAYFIELD_HEIGHT * 2
 
 TIMER_FRAME_COUNT      ds 1
-TIMER_DIGITS           ds 6
+TIMER_DIGITS           ds 8
 TIMER_DIGITS_BUFFER    ds 1
 TIMER                  ds 2
 TIMER_DIGIT_DEC        ds 4
@@ -67,12 +69,12 @@ PLAYER_MOVED           ds 1
 
 Reset
     CLEAN_START
+ResetDirty
     lda #0
     sta LEVEL_INDEX
 
     SET_POINTER TIMER_DIGITS + 0, Number0
     SET_POINTER TIMER_DIGITS + 2, Number0
-    SET_POINTER TIMER_DIGITS + 4, Number0
 
 ResetLevel
     lda #0
@@ -112,23 +114,28 @@ NextFrame
     jsr GameKernel
 
 .DoneScreen
-    lda LEVEL_INDEX
-    beq Reset
-
+    ; lda LEVEL_INDEX
+    ; beq ResetDirty
+ 
     lda MUST_RESET_LEVEL
     bne ResetLevel
     jmp NextFrame
 
 HomeScreen
     TIMER_SETUP 37
+    sta WSYNC
+    TIMER_WAIT
+
+    TIMER_SETUP 192
+
+    lda #%00000000
+    sta CTRLPF
+
     lda #0
     sta VBLANK
-    TIMER_WAIT
 
     lda #PLAYER_COLOR
     sta COLUPF
-
-    TIMER_SETUP 192
 
     lda #%00000000
     sta PF0
@@ -219,7 +226,7 @@ HomeScreen
     sta PF2
     sta WSYNC
 
-	bit INPT4
+  	bit INPT4
     bmi .DoneTitle
 
     lda #1
@@ -227,12 +234,15 @@ HomeScreen
     lda #1
     sta MUST_RESET_LEVEL
 
+.DoneTitle
+
     TIMER_WAIT
 
     TIMER_SETUP 30
+    lda #2
+    sta VBLANK
     TIMER_WAIT
 
-.DoneTitle
     rts
 
 GameKernel
@@ -359,7 +369,7 @@ EndGameKernelLineLoop
 
     ; OVERSCAN
     TIMER_SETUP 30
-	lda #2
+    lda #2
     sta VBLANK
 
     jsr ClearGameKernelPlayfield
@@ -393,17 +403,10 @@ VBlankHandleTimer
     cmp #10
     bne .DoneUpdateTimerDigits
 
-    lda #0
-    sta TIMER_DIGIT_DEC + 1
-    inc TIMER_DIGIT_DEC + 2
-    lda TIMER_DIGIT_DEC + 2
-    cmp #10
-    bne .DoneUpdateTimerDigits
-
 .DoneUpdateTimerDigits
 
 TIMER_DIGIT_DEC_INDEX SET 0
-    REPEAT 3
+    REPEAT 2
 TIMER_DIGIT_VALUE SET 0
     ldx #0
     REPEAT 10
@@ -494,6 +497,9 @@ VBlankHandlePlayer
     lda #1
     sta PLAYER_MOVED
 
+    lda #%0000000
+    sta REFP0
+
     inc PLAYER_X
     inc PLAYER_X
 DoneMoveRight
@@ -509,14 +515,17 @@ DoneMoveRight
     clc
     cmp #PLAYER_ANIM_SPEED / 2
     bcs .NotMoveLeftFrame0
-    SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveLeft0
+    SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveRight0
     jmp .NotMoveLeftFrame1
 .NotMoveLeftFrame0
-    SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveLeft1
+    SET_POINTER PLAYER_CHAR_FRAME, CharFrameMoveRight1
 .NotMoveLeftFrame1
 
     lda #1
     sta PLAYER_MOVED
+
+    lda #%0001000
+    sta REFP0
 
     dec PLAYER_X
     dec PLAYER_X
@@ -555,8 +564,10 @@ DoneMoveUp
 
     lda PLAYER_Y
     sec
-    cmp #0
-    bne .PlayerStillAboveFloor
+    cmp #$1 ; check if player is at Y zero to see if they touch lava    
+    bpl .PlayerStillAboveFloor
+    lda #1
+    sta PLAYER_Y
     jsr EnableLostRound
 
 .NotAboveLava
@@ -781,13 +792,44 @@ VBlankHandleEye
 DrawFloor
     lda #%11110000
     sta PF0
-    lda #%00000000
+
+    lda LOST_TIMER
+    beq .DrawFloor
+    rts
+.DrawFloor
+
+
+LAVA_Y SET 0
+    ldy #2
+
+    lda #0
     sta PF1
     sta PF2
+
+    REPEAT 2
+    lda (LEVEL),y
+    sta COLUPF ; set floor color
+
+    IF LAVA_Y >= 1
+        lda #%11111111
+        sta PF1
+        sta PF2
+
+        SLEEP 7
+        lda #LAVA_COLOR
+        sta COLUPF ; set lava color
+        lda (LEVEL),y
+        SLEEP 35
+        sta COLUPF ; set floor color
+    ENDIF
     sta WSYNC
-    sta WSYNC
-    sta WSYNC
-    sta WSYNC
+
+LAVA_Y SET LAVA_Y + 1
+    REPEND
+
+    lda #LAVA_COLOR
+    sta COLUPF
+
     rts
 
 DrawLava
@@ -797,7 +839,7 @@ DrawLava
     lda LOST_TIMER ; don't draw lava if we are in the "Lost" screen
     bne .DontDrawLava
 
-    lda #$23
+    lda #LAVA_COLOR
     sta COLUPF ; set lava color
 
     lda #$20
@@ -824,6 +866,11 @@ DrawLava
     rts
 
 DrawTimer
+    lda LOST_TIMER
+    beq .DrawTimer
+    rts
+
+.DrawTimer
     sta WSYNC
 
     lda #$00
@@ -850,21 +897,20 @@ DrawTimer
 
     ldy #0
 .TimerLine
-    sta WSYNC
 
-    lda (TIMER_DIGITS + 6),y
-    and #%11110000
-    sta TIMER_DIGITS_BUFFER
+    ; lda (TIMER_DIGITS + 6),y
+    ; and #%11110000
+    ; sta TIMER_DIGITS_BUFFER
 
-    lda (TIMER_DIGITS + 4),y
-    lsr
-    lsr
-    lsr
-    lsr
-    and #%00001111
-    ora TIMER_DIGITS_BUFFER
-    asl
-    sta PF1
+    ; lda (TIMER_DIGITS + 4),y
+    ; lsr
+    ; lsr
+    ; lsr
+    ; lsr
+    ; and #%00001111
+    ; ora TIMER_DIGITS_BUFFER
+    ; asl
+    ; sta PF1
 
     lda (TIMER_DIGITS + 2),y
     and #%00001111
@@ -878,6 +924,7 @@ DrawTimer
     lsr
     sta PF2
 
+    sta WSYNC
     iny
     cpy #5
     bne .TimerLine
@@ -1368,29 +1415,6 @@ Tile6
     .byte #%00000000 ; Tile 6
 
     BOUNDARY $00
-CharFrameMoveLeft0
-    REPEAT SPRITE_PADDING
-    .byte #%00000000
-    REPEND
-        .byte #%00000000;--
-        .byte #%00000000;--
-        .byte #%00000000;--
-        .byte #%00000000;--
-        .byte #%00000000;--
-        .byte #%00001110;--
-        .byte #%01111110;--
-        .byte #%10111111;--
-        .byte #%11111111;--
-        .byte #%01111110;--
-        .byte #%00111111;--
-        .byte #%00011111;--
-        .byte #%00010100;--
-        .byte #%00111100;--
-        .byte #%00000000;--
-        .byte #%00000000;--
-    REPEAT SPRITE_PADDING
-    .byte #%00000000
-    REPEND
 
 TitlePF1Super1
    .byte #%00000001
@@ -1405,31 +1429,6 @@ TitlePF2Super1
    .byte #%10101011
    .byte #%10101010
    .byte #%10111011
-
-    BOUNDARY $00
-CharFrameMoveLeft1
-    REPEAT SPRITE_PADDING
-    .byte #%00000000
-    REPEND
-        .byte #%00000000;--
-        .byte #%00000000;--
-        .byte #%00000000;--
-        .byte #%00000000;--
-        .byte #%00000000;--
-        .byte #%00001110;--
-        .byte #%01111111;--
-        .byte #%10111111;--
-        .byte #%11111110;--
-        .byte #%01111110;--
-        .byte #%00111111;--
-        .byte #%00011111;--
-        .byte #%00011110;--
-        .byte #%00111100;--
-        .byte #%00000000;--
-        .byte #%00000000;--
-    REPEAT SPRITE_PADDING - 1
-    .byte #%00000000
-    REPEND
 
 ;; Numbers
 Number0
