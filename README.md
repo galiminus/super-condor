@@ -1,4 +1,4 @@
-# Super Condor
+# Super Condor (Atari 2600)
 
 You're a Super CONDOR in an Inca temple and you must get the scepter of FIRE in each level to proceed to the next one.
 
